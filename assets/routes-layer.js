@@ -1,80 +1,140 @@
 (function ($, window, document) {
 	'use strict';
 
-	// JetEngine loads the Mapbox provider after its main maps script; wait for
-	// the map instance below instead of requiring the provider global here.
-	if (!$ || !window.InmovFtthMapRoutes) return;
+	var config = window.InmovFtthMapRoutes;
+	if (!$ || !config || !config.endpoint || !document) return;
 
 	var sourceId = 'inmov-ftth-routes-source';
 	var layerId = 'inmov-ftth-routes-line';
-	var attempts = 0;
-	var timer = window.setInterval(function () {
-		attempts++;
-		var container = document.querySelector('.jet-map-listing');
-		var map = container ? $(container).data('mapInstance') : null;
+	var routeData = null;
+	var requestPromise = null;
+	var requestRetryTimer = null;
+	var requestRetryDelay = 1000;
+	var mapRecords = new WeakMap();
+	var trackedContainers = new Set();
+	var scanTimer = null;
+	var stopped = false;
 
-		if (map && typeof map.addSource === 'function') {
-			window.clearInterval(timer);
-			initializeRouteLayer(map);
-		} else if (attempts >= 60) {
-			window.clearInterval(timer);
+	function getMapInstance(container) {
+		try {
+			var map = $(container).data('mapInstance');
+			return map && typeof map.addSource === 'function' && typeof map.on === 'function' ? map : null;
+		} catch (error) {
+			return null;
 		}
-	}, 250);
-
-	function initializeRouteLayer(map) {
-		if (map.__inmovFtthRouteLayerLoading) return;
-		map.__inmovFtthRouteLayerLoading = true;
-
-		fetch(window.InmovFtthMapRoutes.endpoint, {
-			credentials: 'same-origin',
-			headers: { 'X-WP-Nonce': window.InmovFtthMapRoutes.nonce }
-		})
-			.then(function (response) {
-				if (!response.ok) throw new Error('Não foi possível carregar as rotas.');
-				return response.json();
-			})
-			.then(function (geojson) {
-				map.__inmovFtthRouteData = geojson;
-				map.on('style.load', function () { addLayer(map); });
-				if (map.isStyleLoaded()) addLayer(map);
-			})
-			.catch(function (error) {
-				map.__inmovFtthRouteLayerLoading = false;
-				if (window.console && console.warn) console.warn('[Mapa FTTH]', error.message);
-			});
 	}
 
-	function addLayer(map) {
-		var data = map.__inmovFtthRouteData;
-		if (!data || !map.isStyleLoaded()) return;
+	function fetchRoutes() {
+		if (routeData) return Promise.resolve(routeData);
+		if (requestPromise) return requestPromise;
+		if (typeof window.fetch !== 'function') return Promise.resolve(null);
 
-		if (!map.getSource(sourceId)) {
-			map.addSource(sourceId, { type: 'geojson', data: data });
-		} else {
-			map.getSource(sourceId).setData(data);
-		}
+		var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+		var timeout = controller ? window.setTimeout(function () { controller.abort(); }, 20000) : null;
+		var headers = {};
+		if (config.nonce) headers['X-WP-Nonce'] = config.nonce;
 
-		if (!map.getLayer(layerId)) {
-			map.addLayer({
-				id: layerId,
-				type: 'line',
-				source: sourceId,
-				layout: { 'line-cap': 'round', 'line-join': 'round' },
-				paint: {
-					'line-color': ['coalesce', ['get', 'color'], '#f97316'],
-					'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4, 18, 6],
-					'line-opacity': 0.9
+		var options = {
+			credentials: 'same-origin',
+			cache: 'no-store',
+			headers: headers
+		};
+		if (controller) options.signal = controller.signal;
+
+		requestPromise = Promise.resolve()
+			.then(function () { return window.fetch(config.endpoint, options); })
+			.then(function (response) {
+				if (!response || !response.ok) {
+					var status = response ? response.status : 'sem resposta';
+					throw new Error('A API de rotas respondeu com ' + status + '.');
 				}
+				return response.json();
+			})
+			.then(function (data) {
+				if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
+					throw new Error('A resposta de rotas não é um GeoJSON válido.');
+				}
+				routeData = data;
+				requestRetryDelay = 1000;
+				return data;
+			})
+			.catch(function (error) {
+				scheduleRouteRetry();
+				return null;
+			})
+			.then(function (data) {
+				if (timeout) window.clearTimeout(timeout);
+				requestPromise = null;
+				if (data) scanMaps();
+				return data;
 			});
-		}
 
-		if (!map.__inmovFtthRouteEventsBound) {
-			map.__inmovFtthRouteEventsBound = true;
-			map.on('mouseenter', layerId, function () { map.getCanvas().style.cursor = 'pointer'; });
-			map.on('mouseleave', layerId, function () { map.getCanvas().style.cursor = ''; });
-			map.on('click', layerId, function (event) {
-				var feature = event.features && event.features[0];
-				if (!feature) return;
+		return requestPromise;
+	}
+
+	function scheduleRouteRetry() {
+		if (stopped || requestRetryTimer) return;
+
+		var delay = requestRetryDelay;
+		requestRetryDelay = Math.min(requestRetryDelay * 2, 30000);
+		requestRetryTimer = window.setTimeout(function () {
+			requestRetryTimer = null;
+			fetchRoutes();
+		}, delay);
+	}
+
+	function removeLayerEvents(record) {
+		var map = record.map;
+		if (!record.layerEventsBound || !map || typeof map.off !== 'function') return;
+
+		try {
+			map.off('mouseenter', layerId, record.onMouseEnter);
+			map.off('mouseleave', layerId, record.onMouseLeave);
+			map.off('click', layerId, record.onClick);
+		} catch (error) {
+			// A style change can remove the layer before these handlers are detached.
+		}
+		record.layerEventsBound = false;
+	}
+
+	function detachMap(record) {
+		if (!record || !record.map) return;
+
+		try {
+			record.map.off('style.load', record.onStyleLoad);
+		} catch (error) {
+			// The map may already have been removed by Elementor/JetEngine.
+		}
+		removeLayerEvents(record);
+		if (record.resizeObserver) record.resizeObserver.disconnect();
+		if (record.resizeTimer) window.clearTimeout(record.resizeTimer);
+		if (record.renderTimer) window.clearTimeout(record.renderTimer);
+	}
+
+	function scheduleRender(record) {
+		if (!record || record.renderTimer || stopped) return;
+		record.renderTimer = window.setTimeout(function () {
+			record.renderTimer = null;
+			renderRoutes(record);
+		}, record.renderRetryDelay);
+		record.renderRetryDelay = Math.min(record.renderRetryDelay * 2, 8000);
+	}
+
+	function bindLayerEvents(record) {
+		var map = record.map;
+		if (typeof map.on !== 'function') return;
+
+		removeLayerEvents(record);
+		record.onMouseEnter = function () {
+			try { map.getCanvas().style.cursor = 'pointer'; } catch (error) {}
+		};
+		record.onMouseLeave = function () {
+			try { map.getCanvas().style.cursor = ''; } catch (error) {}
+		};
+		record.onClick = function (event) {
+			try {
+				var feature = event && event.features && event.features[0];
+				if (!feature || !window.mapboxgl || !window.mapboxgl.Popup) return;
 
 				var props = feature.properties || {};
 				var card = document.createElement('div');
@@ -100,7 +160,157 @@
 					.setLngLat(event.lngLat)
 					.setDOMContent(card)
 					.addTo(map);
-			});
+			} catch (error) {
+				// Popup failures must not affect the JetEngine map or its markers.
+			}
+		};
+
+		map.on('mouseenter', layerId, record.onMouseEnter);
+		map.on('mouseleave', layerId, record.onMouseLeave);
+		map.on('click', layerId, record.onClick);
+		record.layerEventsBound = true;
+	}
+
+	function renderRoutes(record) {
+		if (!routeData || !record || record.rendered || stopped) return;
+
+		var map = record.map;
+		try {
+			if (typeof map.isStyleLoaded !== 'function' || !map.isStyleLoaded()) return;
+
+			var source = map.getSource(sourceId);
+			if (!source) {
+				map.addSource(sourceId, { type: 'geojson', data: routeData });
+			} else if (typeof source.setData === 'function') {
+				source.setData(routeData);
+			}
+
+			if (!map.getLayer(layerId)) {
+				map.addLayer({
+					id: layerId,
+					type: 'line',
+					source: sourceId,
+					layout: { 'line-cap': 'round', 'line-join': 'round' },
+					paint: {
+						'line-color': ['coalesce', ['get', 'color'], '#f97316'],
+						'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4, 18, 6],
+						'line-opacity': 0.9
+					}
+				});
+			}
+
+			bindLayerEvents(record);
+			record.rendered = true;
+			record.renderRetryDelay = 1000;
+		} catch (error) {
+			record.rendered = false;
+			scheduleRender(record);
 		}
+	}
+
+	function bindMap(container, map) {
+		var existing = mapRecords.get(container);
+		if (existing && existing.map === map) {
+			renderRoutes(existing);
+			return;
+		}
+		if (existing) detachMap(existing);
+
+		var record = {
+			map: map,
+			rendered: false,
+			layerEventsBound: false,
+			renderRetryDelay: 1000,
+			renderTimer: null,
+			resizeTimer: null,
+			resizeObserver: null,
+			onStyleLoad: null,
+			onMouseEnter: null,
+			onMouseLeave: null,
+			onClick: null
+		};
+		record.onStyleLoad = function () {
+			record.rendered = false;
+			record.renderRetryDelay = 1000;
+			renderRoutes(record);
+		};
+		mapRecords.set(container, record);
+		trackedContainers.add(container);
+
+		try {
+			map.on('style.load', record.onStyleLoad);
+		} catch (error) {
+			// The map can be rebuilding while Elementor changes responsive layout.
+		}
+
+		if (typeof window.ResizeObserver === 'function') {
+			record.resizeObserver = new window.ResizeObserver(function () {
+				if (record.resizeTimer) window.clearTimeout(record.resizeTimer);
+				record.resizeTimer = window.setTimeout(function () {
+					record.resizeTimer = null;
+					try { if (typeof map.resize === 'function') map.resize(); } catch (error) {}
+				}, 100);
+			});
+			record.resizeObserver.observe(container);
+		}
+
+		fetchRoutes().then(function () { renderRoutes(record); });
+	}
+
+	function scanMaps() {
+		if (stopped) return;
+
+		var containers = document.querySelectorAll('.jet-map-listing.mapbox-provider');
+		var activeContainers = new Set();
+		Array.prototype.forEach.call(containers, function (container) {
+			activeContainers.add(container);
+			var map = getMapInstance(container);
+			if (map) bindMap(container, map);
+		});
+
+		trackedContainers.forEach(function (container) {
+			if (activeContainers.has(container) && container.isConnected) return;
+			detachMap(mapRecords.get(container));
+			mapRecords.delete(container);
+			trackedContainers.delete(container);
+		});
+	}
+
+	function stop() {
+		stopped = true;
+		if (scanTimer) window.clearInterval(scanTimer);
+		if (requestRetryTimer) window.clearTimeout(requestRetryTimer);
+		trackedContainers.forEach(function (container) { detachMap(mapRecords.get(container)); });
+		trackedContainers.clear();
+	}
+
+	function start() {
+		if (stopped || scanTimer) return;
+		scanMaps();
+		// Elementor/JetEngine may create or replace the Mapbox instance after a
+		// responsive reflow or a delayed provider load. This lightweight check
+		// only reads the existing instance; it never initializes the base map.
+		scanTimer = window.setInterval(scanMaps, 1500);
+
+		if (window.jQuery) {
+			window.jQuery(window).on(
+				'jet-engine/frontend-maps/loaded jet-engine/maps/provider-script-loaded jet-engine/maps/provider-script-async-loaded',
+				scanMaps
+			);
+		}
+		window.addEventListener('resize', scanMaps, { passive: true });
+		window.addEventListener('orientationchange', function () {
+			window.setTimeout(scanMaps, 250);
+		}, { passive: true });
+		window.addEventListener('pagehide', function (event) {
+			if (!event || !event.persisted) stop();
+		});
+		window.addEventListener('pageshow', start);
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', start, { once: true });
+	} else {
+		start();
 	}
 })(window.jQuery, window, document);

@@ -24,10 +24,12 @@ O preview fica em transient por 30 minutos, vinculado ao usuário autenticado. O
 - O nome/localidade dos demais arquivos é inferido pelo nome do arquivo ou pelas pastas KML; a prévia permite corrigir a localidade por elemento.
 - Polígonos são identificados e excluídos da gravação nesta versão: ainda não há uma camada/CCT de áreas definida.
 
-## Camada de rotas no mapa (versão 0.3.1)
+## Camada de rotas no mapa (versão 0.3.2)
 
 - O widget nativo JetEngine continua responsável pelos pontos e popups existentes.
-- A camada adicional lê as rotas publicadas do CCT `rotas_fibra` por um endpoint REST autenticado e desenha os `LineString` no mesmo mapa Mapbox da página **Mapa da Rede FTTH** (ID 3600 / slug `mapa-da-rede-ftth`).
+- A camada adicional lê as rotas publicadas do CCT `rotas_fibra` por um endpoint REST autenticado e desenha os `LineString` no mesmo mapa Mapbox da página **Mapa da Rede FTTH** (ID 3600 / slug `mapa-da-rede-ftth`). Ela só é conectada depois dos scripts do provedor Mapbox do JetEngine; não cria nem substitui o mapa base ou os marcadores.
+- A inicialização acompanha instâncias tardias ou recriadas pelo Elementor, mudanças de tamanho/orientação e recarga de estilo. Falhas temporárias ao buscar rotas são repetidas com espera progressiva; exceções da camada não interrompem a renderização nativa do mapa.
+- A resposta GeoJSON usa política sem cache no navegador para que edições/importações recentes não fiquem ocultas por uma resposta antiga.
 - Clicar em uma linha mostra nome, localidade, tipo, cabo, fibras e extensão. A camada é recriada quando o estilo do mapa muda.
 - São exibidas rotas com status `nativa`, `em_implantacao` e `manutencao`; rotas planejadas ou inativas ficam fora da visualização.
 - O endpoint exige usuário autenticado. O mapa deve continuar protegido pelas regras de acesso da página.
@@ -47,7 +49,7 @@ Compacte a pasta `importador-mapa-ftth` em ZIP e instale no WordPress em **Plugi
 
 O plugin consulta as Releases públicas deste repositório e usa o atualizador nativo do WordPress para oferecer o botão **Atualizar agora**. Não é necessário token no site WordPress.
 
-Para publicar uma versão: atualize a versão no cabeçalho PHP e em `Inmov_JetEngine_FTTH_Importer::VERSION`, faça commit e push, crie uma tag no formato `vMAJOR.MINOR.PATCH` (por exemplo, `v0.3.2`) e envie a tag. O GitHub Actions cria a Release e anexa `importador-mapa-ftth.zip` com a pasta interna compatível com o plugin instalado. O WordPress encontrará a atualização na próxima verificação de plugins.
+Para publicar uma versão: atualize a versão no cabeçalho PHP e em `Inmov_JetEngine_FTTH_Importer::VERSION`, faça commit e push, crie uma tag no formato `vMAJOR.MINOR.PATCH` e envie a tag. O GitHub Actions cria a Release e anexa `importador-mapa-ftth.zip` com a pasta interna compatível com o plugin instalado. O WordPress encontrará a atualização na próxima verificação de plugins.
 
 Na instalação inicial ou para migrar uma versão antiga que ainda não tem o atualizador, é necessário instalar uma vez o ZIP da Release manualmente. Depois disso, as próximas versões aparecem no painel do WordPress. Atualizações automáticas em segundo plano continuam sob controle da opção padrão do WordPress por plugin.
 

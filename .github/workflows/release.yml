@@ -1,0 +1,30 @@
+name: Build and publish WordPress release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Build WordPress plugin ZIP
+        shell: bash
+        run: |
+          mkdir -p dist/importador-mapa-ftth
+          cp importador-mapa-ftth.php README.md dist/importador-mapa-ftth/
+          cp -R assets dist/importador-mapa-ftth/assets
+          cd dist
+          zip -r importador-mapa-ftth.zip importador-mapa-ftth
+
+      - name: Publish release and ZIP asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/importador-mapa-ftth.zip --title "$GITHUB_REF_NAME" --generate-notes

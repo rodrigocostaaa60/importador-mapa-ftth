@@ -34,6 +34,11 @@ O preview fica em transient por 30 minutos, vinculado ao usuário autenticado. O
 - São exibidas rotas com status `nativa`, `em_implantacao` e `manutencao`; rotas planejadas ou inativas ficam fora da visualização.
 - O endpoint exige usuário autenticado. O mapa deve continuar protegido pelas regras de acesso da página.
 
+## Atualizações
+
+- Na página **Plugins**, o link **Verificar atualização** força uma consulta nova à release pública do GitHub e ao atualizador nativo do WordPress.
+- A versão da release é armazenada em cache por até 5 minutos; falhas de consulta, por até 1 minuto. Isso evita manter uma versão antiga por horas e permite nova tentativa rápida quando o GitHub estiver temporariamente indisponível.
+
 ## Limites
 
 - Importa geometrias KML `Point` e `LineString`; ignora/exibe polígonos como itens de revisão.
@@ -49,7 +54,7 @@ Compacte a pasta `importador-mapa-ftth` em ZIP e instale no WordPress em **Plugi
 
 O plugin consulta as Releases públicas deste repositório e usa o atualizador nativo do WordPress para oferecer o botão **Atualizar agora**. Não é necessário token no site WordPress.
 
-Para publicar uma versão: atualize a versão no cabeçalho PHP e em `Inmov_JetEngine_FTTH_Importer::VERSION`, faça commit e push, crie uma tag no formato `vMAJOR.MINOR.PATCH` e envie a tag. O GitHub Actions cria a Release e anexa `importador-mapa-ftth.zip` com a pasta interna compatível com o plugin instalado. O WordPress encontrará a atualização na próxima verificação de plugins.
+Para publicar uma versão: atualize a versão no cabeçalho PHP e em `Inmov_JetEngine_FTTH_Importer::VERSION`, faça commit e push, crie uma tag no formato `vMAJOR.MINOR.PATCH` e envie a tag. O GitHub Actions cria a Release e anexa `importador-mapa-ftth.zip` com a pasta interna compatível com o plugin instalado. O WordPress encontrará a atualização na próxima verificação de plugins; para solicitar uma consulta imediata, use **Plugins → Verificar atualização**.
 
 Na instalação inicial ou para migrar uma versão antiga que ainda não tem o atualizador, é necessário instalar uma vez o ZIP da Release manualmente. Depois disso, as próximas versões aparecem no painel do WordPress. Atualizações automáticas em segundo plano continuam sob controle da opção padrão do WordPress por plugin.
 

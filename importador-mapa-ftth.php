@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.3.2
+ * Version: 0.3.3
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,8 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION       = '0.3.2';
-	const TRANSIENT_TTL = 30 * MINUTE_IN_SECONDS;
+	const VERSION               = '0.3.3';
+	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
+	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
+	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
 	const MAX_BYTES     = 20 * 1024 * 1024;
 	const NONCE_ACTION  = 'inmov_ftth_import';
 
@@ -34,6 +36,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'rest_api_init', array( $this, 'register_routes_endpoint' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
 		add_filter( 'update_plugins_github.com', array( $this, 'filter_github_update' ), 10, 4 );
+		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_update_check_link' ) );
+		add_action( 'admin_post_inmov_ftth_check_update', array( $this, 'handle_update_check' ) );
+		add_action( 'admin_notices', array( $this, 'render_update_check_notice' ) );
 	}
 
 	/** Connect WordPress' native plugin updater to public GitHub Releases. */
@@ -45,7 +50,11 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$release = get_transient( 'inmov_ftth_latest_github_release' );
 		if ( false === $release ) {
 			$release = $this->fetch_latest_github_release();
-			set_transient( 'inmov_ftth_latest_github_release', $release ?: array( 'none' => true ), 6 * HOUR_IN_SECONDS );
+			set_transient(
+				'inmov_ftth_latest_github_release',
+				$release ?: array( 'none' => true ),
+				$release ? self::UPDATE_CACHE_TTL : self::UPDATE_FAILURE_TTL
+			);
 		}
 
 		if ( empty( $release ) || ! empty( $release['none'] ) ) {
@@ -65,6 +74,41 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'package'     => $release['package'],
 			'requires_php'=> '8.0',
 		);
+	}
+
+	/** Add a direct, nonce-protected release check to this plugin's row. */
+	public function add_update_check_link( $links ) {
+		$url = wp_nonce_url(
+			admin_url( 'admin-post.php?action=inmov_ftth_check_update' ),
+			'inmov_ftth_check_update'
+		);
+		array_unshift( $links, '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Verificar atualização', 'inmov-ftth' ) . '</a>' );
+		return $links;
+	}
+
+	/** Force a fresh GitHub lookup and WordPress plugin-update scan. */
+	public function handle_update_check() {
+		if ( ! current_user_can( 'update_plugins' ) ) {
+			wp_die( esc_html__( 'Você não tem permissão para verificar atualizações.', 'inmov-ftth' ), 403 );
+		}
+		check_admin_referer( 'inmov_ftth_check_update' );
+
+		delete_transient( 'inmov_ftth_latest_github_release' );
+		delete_site_transient( 'update_plugins' );
+		wp_update_plugins();
+
+		wp_safe_redirect( add_query_arg( 'ftth_update_check', 'done', admin_url( 'plugins.php' ) ) );
+		exit;
+	}
+
+	/** Confirm that the forced update scan completed. */
+	public function render_update_check_notice() {
+		if ( ! is_admin() || empty( $_GET['ftth_update_check'] ) || 'done' !== sanitize_key( wp_unslash( $_GET['ftth_update_check'] ) ) ) {
+			return;
+		}
+		?>
+		<div class="notice notice-info is-dismissible"><p><?php esc_html_e( 'Verificação concluída. Se houver uma nova release, ela aparecerá nesta lista.', 'inmov-ftth' ); ?></p></div>
+		<?php
 	}
 
 	/** Read the latest stable release and its WordPress-ready ZIP asset. */

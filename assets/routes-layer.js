@@ -28,7 +28,9 @@
 			var count = Number(props.fibers);
 			// Imported KMLs often encode the engineering label in the route name
 			// (e.g. "FIBRA 6FO"). Prefer that explicit label for visualization.
-			var label = String(props.name || '').match(/(?:^|\b)(\d+)\s*FO\b/i);
+			var label = String(props.name || '') + ' ' + String(props.cableType || '');
+			label = label.match(/(?:^|[^a-z])0*(\d{1,3})\s*FO\b/i);
+			if (!label) label = String(props.cableType || '').match(/(?:^|[-_])s?0*(\d{1,3})\s*FO\b/i);
 			if (label) count = Number(label[1]);
 			var style = Number.isInteger(count) && count > 0
 				? (count >= 72 ? ['#ec4899', 6] : fiberStyles[count]) : null;

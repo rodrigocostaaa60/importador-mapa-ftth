@@ -123,6 +123,21 @@ test('recognizes an explicit FO label in the route name over a conflicting numer
 	assert.equal(props.ftthWidth, 3);
 });
 
+test('recognizes compact FO notation in the cable description', async () => {
+	const data = { type: 'FeatureCollection', features: [{
+		type: 'Feature', properties: { name: 'MINIRA03/3', cableType: 'cfoa-sm-as80-s06fo', fibers: 0 },
+		geometry: { type: 'LineString', coordinates: [[-39, -13], [-39.1, -13.1]] }
+	}] };
+	const app = boot({ fetchImpl: () => Promise.resolve({ ok: true, json: () => Promise.resolve(data) }) });
+	const map = makeMap();
+	app.container.map = map;
+	app.runInterval();
+	await flushPromises();
+	const props = map.sources.get('inmov-ftth-routes-source').data.features[0].properties;
+	assert.equal(props.ftthFiberCount, 6);
+	assert.equal(props.ftthColor, '#2563eb');
+});
+
 test('finds a map instance created after the initial page scan', async () => {
 	const app = boot();
 	const map = makeMap();

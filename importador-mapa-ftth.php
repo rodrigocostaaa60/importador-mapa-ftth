@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.3.6
+ * Version: 0.3.7
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.3.6';
+	const VERSION               = '0.3.7';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -578,6 +578,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 	}
 
 	private function detect_route_type( $text ) {
+		if ( preg_match( '/\b(?:asu|cfoa\s*[-_ ]?sm\s*[-_ ]?as\d+)\b/', $text ) ) return 'asu';
 		if ( preg_match( '/\b(backbone|bkb)\b/', $text ) ) return 'backbone';
 		if ( preg_match( '/\b(alimentacao|alimentador|feeder)\b/', $text ) ) return 'alimentacao';
 		if ( preg_match( '/\b(distribuicao|distribution)\b/', $text ) ) return 'distribuicao';
@@ -587,6 +588,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 	private function detect_fiber_count( $text ) {
 		if ( preg_match( '/\b(?:fo\s*)?(\d{1,3})\s*(?:fibras?|fo)\b/', $text, $match ) ) return (int) $match[1];
+		if ( preg_match( '/(?:^|[^a-z])0*(\d{1,3})\s*fo\b/i', $text, $match ) ) return (int) $match[1];
+		if ( preg_match( '/(?:s|-)0*(\d{1,3})\s*fo\b/i', $text, $match ) ) return (int) $match[1];
 		if ( preg_match( '/\b(\d{1,3})\s*f\b/', $text, $match ) ) return (int) $match[1];
 		return 0;
 	}
@@ -746,7 +749,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 					$counts['point']++;
 				} else {
 					$route_type = $route_types[ $index ] ?? $record['route_type'];
-					if ( ! in_array( $route_type, array( 'backbone', 'alimentacao', 'distribuicao', 'drop', 'outro' ), true ) ) throw new RuntimeException( 'Tipo de rota inválido.' );
+					if ( ! in_array( $route_type, array( 'backbone', 'asu', 'alimentacao', 'distribuicao', 'drop', 'outro' ), true ) ) throw new RuntimeException( 'Tipo de rota inválido.' );
 					if ( $this->find_existing( 'rotas_fibra', 'rota_chave_origem', $record['source_key'] ) ) {
 						$counts['existing']++;
 						$counts['skipped']++;

@@ -26,11 +26,16 @@
 		data.features.forEach(function (feature) {
 			var props = feature.properties || (feature.properties = {});
 			var count = Number(props.fibers);
+			// Imported KMLs often encode the engineering label in the route name
+			// (e.g. "FIBRA 6FO"). Prefer that explicit label for visualization.
+			var label = String(props.name || '').match(/(?:^|\b)(\d+)\s*FO\b/i);
+			if (label) count = Number(label[1]);
 			var style = Number.isInteger(count) && count > 0
 				? (count >= 72 ? ['#ec4899', 6] : fiberStyles[count]) : null;
 			style = style || ['#94a3b8', 2];
 			props.ftthColor = style[0];
 			props.ftthWidth = style[1];
+			props.ftthFiberCount = Number.isInteger(count) && count > 0 ? count : '';
 		});
 		return data;
 	}

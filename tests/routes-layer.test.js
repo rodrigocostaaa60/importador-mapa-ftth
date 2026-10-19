@@ -106,6 +106,23 @@ test('styles every supported FO count and keeps missing or unexpected counts neu
 	assert.equal(styled[0].properties.fibers, 1);
 });
 
+test('recognizes an explicit FO label in the route name over a conflicting numeric field', async () => {
+	const data = { type: 'FeatureCollection', features: [{
+		type: 'Feature', properties: { name: 'FIBRA 6FO', fibers: 10 },
+		geometry: { type: 'LineString', coordinates: [[-39, -13], [-39.1, -13.1]] }
+	}] };
+	const app = boot({ fetchImpl: () => Promise.resolve({ ok: true, json: () => Promise.resolve(data) }) });
+	const map = makeMap();
+	app.container.map = map;
+	app.runInterval();
+	await flushPromises();
+	const props = map.sources.get('inmov-ftth-routes-source').data.features[0].properties;
+	assert.equal(props.fibers, 10);
+	assert.equal(props.ftthFiberCount, 6);
+	assert.equal(props.ftthColor, '#2563eb');
+	assert.equal(props.ftthWidth, 3);
+});
+
 test('finds a map instance created after the initial page scan', async () => {
 	const app = boot();
 	const map = makeMap();

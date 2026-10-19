@@ -50,7 +50,7 @@ O preview fica em transient por 30 minutos, vinculado ao usuário autenticado. O
 
 ### Estilo das rotas por FO (0.3.5)
 
-A camada usa `rota_quantidade_fibras` (propriedade `fibers` da API), sem modificar cadastros nem inferir pelo nome do cabo. A cor importada não prevalece sobre esta convenção visual.
+A camada usa `rota_quantidade_fibras` (propriedade `fibers` da API). Quando o nome contém um rótulo explícito como `FIBRA 6FO`, ele prevalece apenas para a visualização; o cadastro original e o valor exibido no popup não são alterados. A cor importada não prevalece sobre esta convenção visual.
 
 | FO | Cor | Espessura em pixels no zoom 14 |
 | --- | --- | --- |

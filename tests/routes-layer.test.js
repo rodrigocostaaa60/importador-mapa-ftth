@@ -85,6 +85,27 @@ async function flushPromises() {
 	for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
+test('styles every supported FO count and keeps missing or unexpected counts neutral', async () => {
+	const counts = [1, '2', 4, 6, 12, 24, 36, 48, 72, 144, 0, null, undefined, 'invalid', 8, -1, 1.5];
+	const data = { type: 'FeatureCollection', features: counts.map(fibers => ({
+		type: 'Feature', properties: { fibers, color: '#f97316' },
+		geometry: { type: 'LineString', coordinates: [[-39, -13], [-39.1, -13.1]] }
+	})) };
+	const app = boot({ fetchImpl: () => Promise.resolve({ ok: true, json: () => Promise.resolve(data) }) });
+	const map = makeMap();
+	app.container.map = map;
+	app.runInterval();
+	await flushPromises();
+	const styled = map.sources.get('inmov-ftth-routes-source').data.features;
+	assert.deepEqual(styled.slice(0, 10).map(f => f.properties.ftthColor),
+		['#64748b', '#38bdf8', '#22c55e', '#2563eb', '#eab308', '#f97316', '#9333ea', '#ef4444', '#ec4899', '#ec4899']);
+	assert.deepEqual(styled.slice(0, 10).map(f => f.properties.ftthWidth), [1.5, 2, 2.5, 3, 3.5, 4.5, 5, 5.5, 6, 6]);
+	assert.ok(styled.slice(10).every(f => f.properties.ftthColor === '#94a3b8' && f.properties.ftthWidth === 2));
+	assert.equal(JSON.stringify(map.layers.get('inmov-ftth-routes-line').paint['line-width']),
+		JSON.stringify(['interpolate', ['linear'], ['zoom'], 8, ['*', ['get', 'ftthWidth'], 0.5], 14, ['get', 'ftthWidth'], 18, ['*', ['get', 'ftthWidth'], 1.5]]));
+	assert.equal(styled[0].properties.fibers, 1);
+});
+
 test('finds a map instance created after the initial page scan', async () => {
 	const app = boot();
 	const map = makeMap();

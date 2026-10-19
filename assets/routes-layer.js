@@ -15,6 +15,25 @@
 	var scanTimer = null;
 	var stopped = false;
 	var nativeInitAttempts = new WeakSet();
+	// Widths in pixels at zoom 14. Unknown counts remain neutral, never inferred.
+	var fiberStyles = {
+		1: ['#64748b', 1.5], 2: ['#38bdf8', 2], 4: ['#22c55e', 2.5],
+		6: ['#2563eb', 3], 12: ['#eab308', 3.5], 24: ['#f97316', 4.5],
+		36: ['#9333ea', 5], 48: ['#ef4444', 5.5]
+	};
+
+	function applyFiberStyles(data) {
+		data.features.forEach(function (feature) {
+			var props = feature.properties || (feature.properties = {});
+			var count = Number(props.fibers);
+			var style = Number.isInteger(count) && count > 0
+				? (count >= 72 ? ['#ec4899', 6] : fiberStyles[count]) : null;
+			style = style || ['#94a3b8', 2];
+			props.ftthColor = style[0];
+			props.ftthWidth = style[1];
+		});
+		return data;
+	}
 
 	function recoverNativeMap(container) {
 		// Replay only JetEngine's own widget initializer if its Elementor event was
@@ -76,7 +95,7 @@
 				if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
 					throw new Error('A resposta de rotas não é um GeoJSON válido.');
 				}
-				routeData = data;
+				routeData = applyFiberStyles(data);
 				requestRetryDelay = 1000;
 				return data;
 			})
@@ -214,8 +233,11 @@
 					source: sourceId,
 					layout: { 'line-cap': 'round', 'line-join': 'round' },
 					paint: {
-						'line-color': ['coalesce', ['get', 'color'], '#f97316'],
-						'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4, 18, 6],
+						'line-color': ['get', 'ftthColor'],
+						'line-width': ['interpolate', ['linear'], ['zoom'],
+							8, ['*', ['get', 'ftthWidth'], 0.5],
+							14, ['get', 'ftthWidth'],
+							18, ['*', ['get', 'ftthWidth'], 1.5]],
 						'line-opacity': 0.9
 					}
 				});

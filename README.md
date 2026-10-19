@@ -48,6 +48,25 @@ O preview fica em transient por 30 minutos, vinculado ao usuário autenticado. O
 
 ## Instalação
 
+### Estilo das rotas por FO (0.3.5)
+
+A camada usa `rota_quantidade_fibras` (propriedade `fibers` da API), sem modificar cadastros nem inferir pelo nome do cabo. A cor importada não prevalece sobre esta convenção visual.
+
+| FO | Cor | Espessura em pixels no zoom 14 |
+| --- | --- | --- |
+| 1 (Drop) | Cinza | 1,5 |
+| 2 | Azul-claro | 2 |
+| 4 | Verde | 2,5 |
+| 6 | Azul | 3 |
+| 12 | Amarelo | 3,5 |
+| 24 | Laranja | 4,5 |
+| 36 | Roxo | 5 |
+| 48 | Vermelho | 5,5 |
+| 72 ou mais | Rosa | 6 |
+| Sem informação ou quantidade não tabelada | Cinza neutro | 2 |
+
+As larguras variam de metade no zoom 8 a 1,5 vezes no zoom 18. Alterações de FO no JetEngine são refletidas no próximo carregamento. Estas cores não representam uma norma técnica de identificação dos cabos.
+
 Compacte a pasta `importador-mapa-ftth` em ZIP e instale no WordPress em **Plugins → Adicionar novo → Enviar plugin**. Ative o plugin. O JetEngine e os três CCTs acima precisam estar ativos. A versão não modifica nem apaga CCTs existentes.
 
 ## Atualizações pelo WordPress

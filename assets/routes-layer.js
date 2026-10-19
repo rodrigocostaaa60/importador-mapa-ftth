@@ -83,7 +83,8 @@
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
 		var sheet = document.createElement('section'); sheet.className = 'inmov-ftth-map-sheet'; sheet.innerHTML = '<button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button><h3 class="inmov-ftth-map-sheet__title"></h3><div class="inmov-ftth-map-sheet__body"></div>'; container.parentNode.appendChild(sheet);
-		sheet.querySelector('.inmov-ftth-map-sheet__close').addEventListener('click', function () { sheet.classList.remove('is-open'); });
+		var closeButton = sheet.querySelector && sheet.querySelector('.inmov-ftth-map-sheet__close');
+		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', function () { if (sheet.classList) sheet.classList.remove('is-open'); });
 		var records = markerRecords(container);
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })

@@ -68,7 +68,7 @@ function boot({ fetchImpl } = {}) {
 	const document = {
 		readyState: 'complete',
 		querySelectorAll() { return container.isConnected ? [container] : []; },
-		createElement() { return { appendChild() {}, set textContent(value) { this.text = value; } }; }
+		createElement() { return { appendChild() {}, addEventListener() {}, setAttribute() {}, set textContent(value) { this.text = value; } }; }
 	};
 	vm.runInNewContext(source, { window, document, Array, Promise, Set, WeakMap, Error, Date, console });
 	return {

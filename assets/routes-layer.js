@@ -68,7 +68,7 @@
 			});
 		}
 		input.addEventListener('input', render);
-		if (navigator.geolocation) navigator.geolocation.getCurrentPosition(function (position) {
+		if (window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
 			userPosition = [position.coords.longitude, position.coords.latitude];
 		}, function () {}, { enableHighAccuracy: true, maximumAge: 300000, timeout: 8000 });
 	}

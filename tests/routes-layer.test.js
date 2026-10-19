@@ -51,6 +51,7 @@ function boot({ fetchImpl } = {}) {
 		querySelector() { return null; },
 		getBoundingClientRect() { return { width: 900, height: 600 }; } };
 	const window = {
+		navigator: {},
 		InmovFtthMapRoutes: { endpoint: '/wp-json/inmov-ftth/v1/routes', nonce: 'test-nonce' },
 		fetch: fetchImpl || (() => Promise.resolve({ ok: true, json: () => Promise.resolve(geojson) })),
 		setInterval(fn) { const id = nextId++; intervals.set(id, fn); return id; },

@@ -78,6 +78,7 @@
 		} catch (error) {}
 		var wrap = document.createElement('div');
 		wrap.className = 'inmov-ftth-point-search mapboxgl-ctrl';
+		if (container.parentNode && container.parentNode.classList) container.parentNode.classList.add('inmov-ftth-map-shell');
 		var input = document.createElement('input');
 		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';

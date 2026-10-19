@@ -47,7 +47,7 @@ function boot({ fetchImpl } = {}) {
 	const intervals = new Map();
 	const timeouts = new Map();
 	const eventListeners = new Map();
-	const container = { isConnected: true, map: null, id: '',
+	const container = { isConnected: true, map: null, id: '', parentNode: { insertBefore() {} },
 		querySelector() { return null; },
 		getBoundingClientRect() { return { width: 900, height: 600 }; } };
 	const window = {

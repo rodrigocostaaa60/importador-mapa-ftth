@@ -16,6 +16,23 @@
 	var stopped = false;
 	var nativeInitAttempts = new WeakSet();
 	var controlsAdded = new WeakSet();
+	var pointClickHandlers = new WeakSet();
+
+	function bindPointClickHandlers(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups) return;
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || marker._map !== map || !marker.getElement || pointClickHandlers.has(marker)) return;
+				pointClickHandlers.add(marker);
+				marker.getElement().addEventListener('click', function () {
+					var position = marker.getLngLat && marker.getLngLat();
+					if (position && typeof map.flyTo === 'function') map.flyTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
+				}, true);
+			});
+		});
+	}
 
 	function markerRecords(container) {
 		try {
@@ -398,6 +415,7 @@
 				map = getMapInstance(container);
 			}
 			if (map) bindMap(container, map);
+			if (map) bindPointClickHandlers(map);
 		});
 
 		trackedContainers.forEach(function (container) {

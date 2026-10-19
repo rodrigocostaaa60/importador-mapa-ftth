@@ -15,6 +15,11 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v4
 
+      - name: Validate PHP and map lifecycle regression tests
+        run: |
+          php -l importador-mapa-ftth.php
+          node --test tests/*.test.js
+
       - name: Build WordPress plugin ZIP
         shell: bash
         run: |

@@ -14,6 +14,28 @@
 	var trackedContainers = new Set();
 	var scanTimer = null;
 	var stopped = false;
+	var nativeInitAttempts = new WeakSet();
+
+	function recoverNativeMap(container) {
+		// Replay only JetEngine's own widget initializer if its Elementor event was
+		// missed. Never construct a second map or reset a partially initialized one.
+		if (nativeInitAttempts.has(container) || !container.isConnected) return;
+		if (!window.JetEngineMaps || typeof window.JetEngineMaps.widgetMap !== 'function' ||
+			!window.mapboxgl || typeof window.mapboxgl.Map !== 'function' ||
+			!window.JetEngineMapboxData || !window.JetEngineMapboxData.token) return;
+		if (container.id || container.querySelector('canvas')) return;
+		var bounds = container.getBoundingClientRect();
+		if (!bounds.width || !bounds.height) return;
+		var scope = $(container).closest('.elementor-widget-jet-engine-maps-listing');
+		if (!scope.length) return;
+		nativeInitAttempts.add(container);
+		try {
+			window.JetEngineMaps.widgetMap(scope);
+		} catch (error) {
+			// A failed constructor must not create an unbounded WebGL allocation loop.
+			window.console.warn('[FTTH] Não foi possível iniciar o mapa nativo.', error);
+		}
+	}
 
 	function getMapInstance(container) {
 		try {
@@ -265,6 +287,10 @@
 		Array.prototype.forEach.call(containers, function (container) {
 			activeContainers.add(container);
 			var map = getMapInstance(container);
+			if (!map) {
+				recoverNativeMap(container);
+				map = getMapInstance(container);
+			}
 			if (map) bindMap(container, map);
 		});
 
@@ -289,7 +315,7 @@
 		scanMaps();
 		// Elementor/JetEngine may create or replace the Mapbox instance after a
 		// responsive reflow or a delayed provider load. This lightweight check
-		// only reads the existing instance; it never initializes the base map.
+		// reuses the existing instance, recovering a missed native init at most once.
 		scanTimer = window.setInterval(scanMaps, 1500);
 
 		if (window.jQuery) {

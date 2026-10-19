@@ -47,7 +47,9 @@ function boot({ fetchImpl } = {}) {
 	const intervals = new Map();
 	const timeouts = new Map();
 	const eventListeners = new Map();
-	const container = { isConnected: true, map: null };
+	const container = { isConnected: true, map: null, id: '',
+		querySelector() { return null; },
+		getBoundingClientRect() { return { width: 900, height: 600 }; } };
 	const window = {
 		InmovFtthMapRoutes: { endpoint: '/wp-json/inmov-ftth/v1/routes', nonce: 'test-nonce' },
 		fetch: fetchImpl || (() => Promise.resolve({ ok: true, json: () => Promise.resolve(geojson) })),
@@ -59,7 +61,8 @@ function boot({ fetchImpl } = {}) {
 	};
 	function jquery(value) {
 		if (value === window) return { on() {} };
-		return { data(key) { return key === 'mapInstance' ? value.map : null; } };
+		return { data(key) { return key === 'mapInstance' ? value.map : null; },
+			closest() { return { length: 1, 0: container }; } };
 	}
 	window.jQuery = jquery;
 	const document = {
@@ -70,6 +73,7 @@ function boot({ fetchImpl } = {}) {
 	vm.runInNewContext(source, { window, document, Array, Promise, Set, WeakMap, Error, Date, console });
 	return {
 		container,
+		window,
 		intervals,
 		timeouts,
 		runInterval() { for (const fn of intervals.values()) fn(); },
@@ -89,6 +93,58 @@ test('finds a map instance created after the initial page scan', async () => {
 	await flushPromises();
 	assert.ok(map.sources.has('inmov-ftth-routes-source'));
 	assert.ok(map.layers.has('inmov-ftth-routes-line'));
+});
+
+test('recovers a missed Elementor init only after native dependencies arrive', async () => {
+	const app = boot();
+	let calls = 0;
+	app.window.JetEngineMaps = { widgetMap(scope) {
+		calls++;
+		assert.equal(scope[0], app.container);
+		app.container.map = makeMap();
+	} };
+	app.runInterval();
+	assert.equal(calls, 0);
+	app.window.mapboxgl = { Map() {} };
+	app.window.JetEngineMapboxData = { token: 'test-public-token' };
+	app.runInterval();
+	await flushPromises();
+	for (let i = 0; i < 20; i++) app.runInterval();
+	assert.equal(calls, 1);
+	assert.ok(app.container.map.layers.has('inmov-ftth-routes-line'));
+});
+
+test('does not recreate partial maps or repeatedly allocate failed maps', () => {
+	const app = boot();
+	let calls = 0;
+	app.window.console = { warn() {} };
+	app.window.JetEngineMaps = { widgetMap() { calls++; throw new Error('WebGL unavailable'); } };
+	app.window.mapboxgl = { Map() {} };
+	app.window.JetEngineMapboxData = { token: 'test-public-token' };
+	app.container.id = 'native-in-progress';
+	app.runInterval();
+	assert.equal(calls, 0);
+	app.container.id = '';
+	app.container.querySelector = () => ({});
+	app.runInterval();
+	assert.equal(calls, 0);
+	app.container.querySelector = () => null;
+	for (let i = 0; i < 20; i++) app.runInterval();
+	assert.equal(calls, 1);
+});
+
+test('waits until a hidden map is visible before native initialization', () => {
+	const app = boot();
+	let calls = 0;
+	app.window.JetEngineMaps = { widgetMap() { calls++; } };
+	app.window.mapboxgl = { Map() {} };
+	app.window.JetEngineMapboxData = { token: 'test-public-token' };
+	app.container.getBoundingClientRect = () => ({ width: 0, height: 0 });
+	app.runInterval();
+	assert.equal(calls, 0);
+	app.container.getBoundingClientRect = () => ({ width: 400, height: 500 });
+	app.runInterval();
+	assert.equal(calls, 1);
 });
 
 test('retries a temporary routes request failure', async () => {

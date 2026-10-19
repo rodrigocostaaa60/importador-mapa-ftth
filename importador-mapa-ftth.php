@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.3.3
+ * Version: 0.3.4
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.3.3';
+	const VERSION               = '0.3.4';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -35,6 +35,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'admin_post_inmov_ftth_import', array( $this, 'handle_import' ) );
 		add_action( 'rest_api_init', array( $this, 'register_routes_endpoint' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
+		add_action( 'wp_print_footer_scripts', array( $this, 'order_native_map_scripts' ), 1 );
 		add_filter( 'update_plugins_github.com', array( $this, 'filter_github_update' ), 10, 4 );
 		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_update_check_link' ) );
 		add_action( 'admin_post_inmov_ftth_check_update', array( $this, 'handle_update_check' ) );
@@ -235,6 +236,27 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$response = rest_ensure_response( array( 'type' => 'FeatureCollection', 'features' => $features ) );
 		$response->header( 'Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0' );
 		return $response;
+	}
+
+	/** Declare the provider dependency before WordPress prints the native map scripts. */
+	public function order_native_map_scripts() {
+		if ( ! is_page( 3600 ) && ! is_page( 'mapa-da-rede-ftth' ) ) {
+			return;
+		}
+		$scripts = wp_scripts();
+		foreach ( array( 'jet-mapbox', 'jet-mapbox-provider', 'jet-maps-listings' ) as $handle ) {
+			if ( ! isset( $scripts->registered[ $handle ] ) ) {
+				return;
+			}
+		}
+		// JetEngine 3.8 registers these independently. Loading frontend-maps first
+		// makes its asynchronous provider wait miss Elementor's frontend/init event.
+		$scripts->registered['jet-mapbox-provider']->deps = array_unique( array_merge(
+			$scripts->registered['jet-mapbox-provider']->deps, array( 'jet-mapbox' )
+		) );
+		$scripts->registered['jet-maps-listings']->deps = array_unique( array_merge(
+			$scripts->registered['jet-maps-listings']->deps, array( 'jet-mapbox-provider' )
+		) );
 	}
 
 	/** Add the route line layer to the existing JetEngine Mapbox map on the FTTH page. */

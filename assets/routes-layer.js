@@ -48,6 +48,11 @@
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
 		var records = markerRecords(container);
+		if (config.pointsEndpoint && typeof window.fetch === 'function') {
+			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
+				.then(function (response) { return response.ok ? response.json() : []; })
+				.then(function (data) { if (Array.isArray(data)) { records = data; render(); } }).catch(function () {});
+		}
 		var userPosition = null;
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
 		function render() {
@@ -64,11 +69,23 @@
 				var point = markerCoordinates(item); if (!point) return;
 				var button = document.createElement('button'); button.type = 'button';
 				button.textContent = item.title || item.name || item.label || item.post_title || 'Ponto da rede';
-				button.addEventListener('click', function () { map.flyTo({ center: point, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 16), essential: true }); results.innerHTML = ''; input.blur(); });
+				button.addEventListener('click', function () {
+					map.flyTo({ center: point, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 16), essential: true });
+					var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
+					if (markerGroup && markerGroup[0] && markerGroup[0].marker && markerGroup[0].marker.getElement) markerGroup[0].marker.getElement().click();
+					results.innerHTML = ''; input.blur();
+				});
 				results.appendChild(button);
 			});
 		}
 		input.addEventListener('input', render);
+		if (container.addEventListener) container.addEventListener('click', function (event) {
+			var markerElement = event.target && event.target.closest ? event.target.closest('.jet-map-marker') : null;
+			if (!markerElement || typeof map.flyTo !== 'function') return;
+			var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData;
+			if (!markerGroup) return;
+			Object.keys(markerGroup).some(function (id) { var marker = markerGroup[id]?.[0]?.marker; if (marker && marker.getElement && marker.getElement() === markerElement) { var position = marker.getLngLat(); map.flyTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom(), 15), essential: true }); return true; } return false; });
+		});
 		if (window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
 			userPosition = [position.coords.longitude, position.coords.latitude];
 		}, function () {}, { enableHighAccuracy: true, maximumAge: 300000, timeout: 8000 });

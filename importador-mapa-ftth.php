@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.4.2
+ * Version: 0.4.3
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.4.2';
+	const VERSION               = '0.4.3';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -165,6 +165,23 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'callback'            => array( $this, 'get_routes_geojson' ),
 			)
 		);
+		register_rest_route( 'inmov-ftth/v1', '/points', array(
+			'methods' => WP_REST_Server::READABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'callback' => array( $this, 'get_points' ),
+		) );
+	}
+
+	public function get_points() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
+		$rows = $wpdb->get_results( "SELECT _ID, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND ponto_status <> 'inativo' LIMIT 3000", ARRAY_A );
+		return rest_ensure_response( array_map( function( $row ) { return array(
+			'id' => (int) $row['_ID'], 'code' => (string) $row['ponto_codigo'], 'name' => (string) $row['ponto_nome'],
+			'type' => (string) $row['ponto_tipo'], 'locality' => (string) $row['ponto_localidade'], 'address' => (string) $row['ponto_endereco'],
+			'lat' => (float) $row['ponto_latitude'], 'lng' => (float) $row['ponto_longitude'], 'status' => (string) $row['ponto_status'],
+			'capacity' => (int) $row['ponto_capacidade_portas'], 'observation' => (string) $row['ponto_observacao'],
+		); }, $rows ) );
 	}
 
 	/** Return active route geometries as a bounded GeoJSON FeatureCollection. */
@@ -278,6 +295,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'InmovFtthMapRoutes',
 			array(
 				'endpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes' ) ),
+				'pointsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
 		);

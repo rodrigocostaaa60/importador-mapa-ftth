@@ -22,7 +22,7 @@
 	function openSheet(map, title, rows, center) {
 		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
-		if (!sheet) return;
+		if (!sheet || !sheet.querySelector) return;
 		sheet.querySelector('.inmov-ftth-map-sheet__title').textContent = title || 'Item do mapa';
 		var body = sheet.querySelector('.inmov-ftth-map-sheet__body'); body.innerHTML = '';
 		rows.forEach(function (row) { if (row[1] === undefined || row[1] === null || row[1] === '') return; var div = document.createElement('div'); div.className = 'inmov-ftth-map-sheet__row'; div.innerHTML = '<b></b><span></span>'; div.querySelector('b').textContent = row[0]; div.querySelector('span').textContent = row[1]; body.appendChild(div); });

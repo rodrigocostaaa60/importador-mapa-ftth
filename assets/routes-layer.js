@@ -15,6 +15,63 @@
 	var scanTimer = null;
 	var stopped = false;
 	var nativeInitAttempts = new WeakSet();
+	var controlsAdded = new WeakSet();
+
+	function markerRecords(container) {
+		try {
+			var raw = container.getAttribute('data-markers');
+			var data = raw ? JSON.parse(raw) : [];
+			return Array.isArray(data) ? data : [];
+		} catch (error) { return []; }
+	}
+
+	function markerCoordinates(item) {
+		var lng = Number(item.lng ?? item.longitude ?? item.lon ?? item.point?.lng);
+		var lat = Number(item.lat ?? item.latitude ?? item.point?.lat);
+		return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+	}
+
+	function addMapControls(container, map) {
+		if (controlsAdded.has(container) || !window.mapboxgl) return;
+		controlsAdded.add(container);
+		try {
+			if (typeof window.mapboxgl.NavigationControl === 'function') map.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
+			if (typeof window.mapboxgl.GeolocateControl === 'function') map.addControl(new window.mapboxgl.GeolocateControl({
+				positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showUserHeading: true
+			}), 'top-right');
+		} catch (error) {}
+		var wrap = document.createElement('div');
+		wrap.className = 'inmov-ftth-point-search mapboxgl-ctrl';
+		var input = document.createElement('input');
+		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
+		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
+		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
+		var records = markerRecords(container);
+		var userPosition = null;
+		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
+		function render() {
+			var query = input.value.trim().toLowerCase();
+			results.innerHTML = '';
+			if (!query) return;
+			var found = records.filter(function (item) { return JSON.stringify(item).toLowerCase().indexOf(query) !== -1; });
+			found.sort(function (a, b) {
+				if (!userPosition) return 0;
+				var ac = markerCoordinates(a), bc = markerCoordinates(b);
+				return (ac ? distance(ac, userPosition) : Infinity) - (bc ? distance(bc, userPosition) : Infinity);
+			});
+			found.slice(0, 8).forEach(function (item) {
+				var point = markerCoordinates(item); if (!point) return;
+				var button = document.createElement('button'); button.type = 'button';
+				button.textContent = item.title || item.name || item.label || item.post_title || 'Ponto da rede';
+				button.addEventListener('click', function () { map.flyTo({ center: point, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 16), essential: true }); results.innerHTML = ''; });
+				results.appendChild(button);
+			});
+		}
+		input.addEventListener('input', render);
+		if (navigator.geolocation) navigator.geolocation.getCurrentPosition(function (position) {
+			userPosition = [position.coords.longitude, position.coords.latitude];
+		}, function () {}, { enableHighAccuracy: true, maximumAge: 300000, timeout: 8000 });
+	}
 	// Widths in pixels at zoom 14. Unknown counts remain neutral, never inferred.
 	var fiberStyles = {
 		1: ['#64748b', 1.5], 2: ['#38bdf8', 2], 4: ['#22c55e', 2.5],
@@ -286,6 +343,7 @@
 			renderRoutes(record);
 		};
 		mapRecords.set(container, record);
+		addMapControls(container, map);
 		trackedContainers.add(container);
 
 		try {

@@ -17,6 +17,23 @@
 	var nativeInitAttempts = new WeakSet();
 	var controlsAdded = new WeakSet();
 	var pointClickHandlers = new WeakSet();
+	var pointRecords = {};
+
+	function openSheet(map, title, rows, center) {
+		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
+		var sheet = document.querySelector('.inmov-ftth-map-sheet');
+		if (!sheet) return;
+		sheet.querySelector('.inmov-ftth-map-sheet__title').textContent = title || 'Item do mapa';
+		var body = sheet.querySelector('.inmov-ftth-map-sheet__body'); body.innerHTML = '';
+		rows.forEach(function (row) { if (row[1] === undefined || row[1] === null || row[1] === '') return; var div = document.createElement('div'); div.className = 'inmov-ftth-map-sheet__row'; div.innerHTML = '<b></b><span></span>'; div.querySelector('b').textContent = row[0]; div.querySelector('span').textContent = row[1]; body.appendChild(div); });
+		sheet.classList.add('is-open');
+	}
+
+	function openPointSheet(map, id) {
+		var point = pointRecords[id];
+		if (!point) return;
+		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço', point.address], ['Capacidade', point.capacity], ['Observações', point.observation]], [point.lng, point.lat]);
+	}
 
 	function bindPointClickHandlers(map) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
@@ -29,6 +46,7 @@
 				marker.getElement().addEventListener('click', function () {
 					var position = marker.getLngLat && marker.getLngLat();
 					if (position && typeof map.flyTo === 'function') map.flyTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
+					openPointSheet(map, id);
 				}, true);
 			});
 		});
@@ -64,11 +82,13 @@
 		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
+		var sheet = document.createElement('section'); sheet.className = 'inmov-ftth-map-sheet'; sheet.innerHTML = '<button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button><h3 class="inmov-ftth-map-sheet__title"></h3><div class="inmov-ftth-map-sheet__body"></div>'; container.parentNode.appendChild(sheet);
+		sheet.querySelector('.inmov-ftth-map-sheet__close').addEventListener('click', function () { sheet.classList.remove('is-open'); });
 		var records = markerRecords(container);
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
-				.then(function (data) { if (Array.isArray(data)) { records = data; render(); } }).catch(function () {});
+				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); render(); } }).catch(function () {});
 		}
 		var userPosition = null;
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
@@ -275,9 +295,12 @@
 			try {
 				if (event && event.lngLat && typeof map.flyTo === 'function') map.flyTo({ center: [event.lngLat.lng, event.lngLat.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
 				var feature = event && event.features && event.features[0];
-				if (!feature || !window.mapboxgl || !window.mapboxgl.Popup) return;
+				if (!feature) return;
 
 				var props = feature.properties || {};
+				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat]);
+				return;
+				/* Native floating popup kept below for backward compatibility. */
 				var card = document.createElement('div');
 				card.className = 'inmov-ftth-route-popup';
 				var title = document.createElement('strong');

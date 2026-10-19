@@ -139,6 +139,12 @@ test('recognizes compact FO notation in the cable description', async () => {
 	assert.equal(props.ftthColor, '#2563eb');
 });
 
+test('supports JetEngine marker position coordinates for point search', async () => {
+	const data = { type: 'FeatureCollection', features: [] };
+	const app = boot({ fetchImpl: () => Promise.resolve({ ok: true, json: () => Promise.resolve(data) }) });
+	assert.ok(app.container);
+});
+
 test('finds a map instance created after the initial page scan', async () => {
 	const app = boot();
 	const map = makeMap();

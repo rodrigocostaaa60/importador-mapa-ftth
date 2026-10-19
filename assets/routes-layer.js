@@ -26,8 +26,9 @@
 	}
 
 	function markerCoordinates(item) {
-		var lng = Number(item.lng ?? item.longitude ?? item.lon ?? item.point?.lng);
-		var lat = Number(item.lat ?? item.latitude ?? item.point?.lat);
+		var position = item.position || item.point || item.coordinates;
+		var lng = Number(item.lng ?? item.longitude ?? item.lon ?? position?.lng ?? position?.[0]);
+		var lat = Number(item.lat ?? item.latitude ?? position?.lat ?? position?.[1]);
 		return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
 	}
 
@@ -63,7 +64,7 @@
 				var point = markerCoordinates(item); if (!point) return;
 				var button = document.createElement('button'); button.type = 'button';
 				button.textContent = item.title || item.name || item.label || item.post_title || 'Ponto da rede';
-				button.addEventListener('click', function () { map.flyTo({ center: point, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 16), essential: true }); results.innerHTML = ''; });
+				button.addEventListener('click', function () { map.flyTo({ center: point, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 16), essential: true }); results.innerHTML = ''; input.blur(); });
 				results.appendChild(button);
 			});
 		}
@@ -238,6 +239,7 @@
 		};
 		record.onClick = function (event) {
 			try {
+				if (event && event.lngLat && typeof map.flyTo === 'function') map.flyTo({ center: [event.lngLat.lng, event.lngLat.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
 				var feature = event && event.features && event.features[0];
 				if (!feature || !window.mapboxgl || !window.mapboxgl.Popup) return;
 

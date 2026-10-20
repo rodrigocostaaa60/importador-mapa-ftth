@@ -499,13 +499,87 @@
 		else window.setTimeout(trigger, 350);
 	}
 
-	function openSheet(map, title, rows, center) {
+	function normalizeSheetStatus(value) {
+		var raw = String(value || '').trim();
+		if (!raw) return 'Não informado';
+		var normalized = raw.toLowerCase().replace(/[_-]+/g, ' ');
+		var labels = {
+			'nativo': 'Nativo',
+			'ativo': 'Ativo',
+			'planejado': 'Planejado',
+			'em implantacao': 'Em implantação',
+			'manutencao': 'Manutenção',
+			'inativo': 'Inativo',
+			'em configuracao': 'Em configuração',
+			'concluida': 'Concluída'
+		};
+		return labels[normalized] || raw.charAt(0).toUpperCase() + raw.slice(1);
+	}
+
+	function sheetTypeVisual(kind, type) {
+		if ('route' === kind) return { key: 'route', label: type || 'Rota de fibra', glyph: '━', color: '#f97316', soft: '#fff7ed' };
+		var visual = pointVisuals[normalizePointType(type)] || pointVisuals.outro;
+		return { key: normalizePointType(type), label: visual.label, glyph: visual.glyph, color: visual.color, soft: visual.color + '1c' };
+	}
+
+	function sheetSetText(sheet, selector, value) {
+		var node = sheet.querySelector(selector);
+		if (node) node.textContent = value || '';
+	}
+
+	function copySheetValue(value) {
+		if (!value) return;
+		try {
+			var nav = window.navigator || (typeof navigator !== 'undefined' ? navigator : null);
+			if (nav && nav.clipboard && nav.clipboard.writeText) nav.clipboard.writeText(value);
+		} catch (error) {}
+	}
+
+	function openSheet(map, title, rows, center, options) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
-		sheet.querySelector('.inmov-ftth-map-sheet__title').textContent = title || 'Item do mapa';
-		var body = sheet.querySelector('.inmov-ftth-map-sheet__body'); body.innerHTML = '';
-		rows.forEach(function (row) { if (row[1] === undefined || row[1] === null || row[1] === '') return; var div = document.createElement('div'); div.className = 'inmov-ftth-map-sheet__row'; div.innerHTML = '<b></b><span></span>'; div.querySelector('b').textContent = row[0]; div.querySelector('span').textContent = row[1]; body.appendChild(div); });
+		options = options || {};
+		var visual = sheetTypeVisual(options.kind || 'point', options.type || '');
+		var status = normalizeSheetStatus(options.status);
+		var statusKey = String(options.status || '').toLowerCase().replace(/[_-]+/g, '-');
+		var icon = sheet.querySelector('.inmov-ftth-map-sheet__icon');
+		sheet.style.setProperty('--sheet-accent', visual.color);
+		sheet.style.setProperty('--sheet-accent-soft', visual.soft);
+		if (icon) {
+			icon.textContent = visual.glyph;
+			icon.style.setProperty('--sheet-accent', visual.color);
+			icon.style.setProperty('--sheet-accent-soft', visual.soft);
+		}
+		sheet.dataset.itemKind = options.kind || 'point';
+		sheet.dataset.itemType = visual.key;
+		sheet.dataset.status = statusKey;
+		sheetSetText(sheet, '.inmov-ftth-map-sheet__type', visual.label);
+		sheetSetText(sheet, '.inmov-ftth-map-sheet__status-text', status);
+		sheetSetText(sheet, '.inmov-ftth-map-sheet__code', options.code ? '#' + options.code : '');
+		sheetSetText(sheet, '.inmov-ftth-map-sheet__title', title || 'Item do mapa');
+		sheetSetText(sheet, '.inmov-ftth-map-sheet__locality-text', options.locality || 'Localidade não informada');
+		var statusDot = sheet.querySelector('.inmov-ftth-map-sheet__status-dot');
+		if (statusDot) statusDot.style.setProperty('--sheet-status-color', (statusKey === 'inativo' ? '#ef4444' : statusKey === 'manutencao' ? '#f59e0b' : '#10b981'));
+		var body = sheet.querySelector('.inmov-ftth-map-sheet__body');
+		if (body) {
+			body.innerHTML = '';
+			rows.forEach(function (row) {
+				if (row[1] === undefined || row[1] === null || row[1] === '') return;
+				var item = document.createElement('div');
+				var wide = /observa|endere[cç]o|descri[cç]/i.test(String(row[0]));
+				item.className = 'inmov-ftth-map-sheet__row' + (wide ? ' is-wide' : '');
+				var label = document.createElement('span'); label.className = 'inmov-ftth-map-sheet__row-label'; label.textContent = row[0];
+				var value = document.createElement('strong'); value.className = 'inmov-ftth-map-sheet__row-value'; value.textContent = row[1];
+				item.appendChild(label); item.appendChild(value); body.appendChild(item);
+			});
+		}
+		var coordinates = center && center.length === 2 ? center[1] + ', ' + center[0] : '';
+		sheet.__inmovFtthCenter = center;
+		sheet.__inmovFtthCoordinates = coordinates;
+		var coordinateButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
+		if (coordinateButton) coordinateButton.classList.toggle('is-hidden', !coordinates);
 		sheet.classList.add('is-open');
+		sheet.setAttribute('aria-hidden', 'false');
 		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
 	}
 
@@ -516,7 +590,7 @@
 		var marker = groups && groups[id] && groups[id][0] && groups[id][0].marker;
 		clearRouteSelection();
 		selectPointMarker(marker);
-		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço', point.address], ['Capacidade', point.capacity], ['Observações', point.observation]], [point.lng, point.lat]);
+		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço', point.address], ['Capacidade', point.capacity ? point.capacity + ' portas' : ''], ['Observações', point.observation]], [point.lng, point.lat], { kind: 'point', type: point.type, status: point.status, code: point.code, locality: point.locality });
 	}
 
 	function bindPointClickHandlers(map) {
@@ -624,7 +698,7 @@
 				var isInteractive = originalTarget && originalTarget.closest && originalTarget.closest('.jet-map-marker, .mapboxgl-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-map-sheet');
 				if (isInteractive) return;
 				var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
-				if (sheet && sheet.classList) sheet.classList.remove('is-open');
+				if (sheet && sheet.classList) { sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); }
 				clearPointSelection();
 				clearRouteSelection();
 			});
@@ -645,9 +719,41 @@
 			map.__inmovFtthStyleApplied = true;
 			try { if (typeof map.setStyle === 'function') map.setStyle(defaultMapStyle); } catch (error) {}
 		}
-		var sheet = document.createElement('section'); sheet.className = 'inmov-ftth-map-sheet'; sheet.innerHTML = '<button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button><h3 class="inmov-ftth-map-sheet__title"></h3><div class="inmov-ftth-map-sheet__body"></div>'; container.parentNode.appendChild(sheet);
+		var sheet = document.createElement('section');
+		sheet.className = 'inmov-ftth-map-sheet';
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.innerHTML = '<div class="inmov-ftth-map-sheet__handle" role="button" tabindex="0" aria-label="Expandir detalhes"><span></span></div>' +
+			'<div class="inmov-ftth-map-sheet__header">' +
+				'<div class="inmov-ftth-map-sheet__icon" aria-hidden="true">•</div>' +
+				'<div class="inmov-ftth-map-sheet__heading">' +
+					'<div class="inmov-ftth-map-sheet__meta"><span class="inmov-ftth-map-sheet__type"></span><span class="inmov-ftth-map-sheet__status"><i class="inmov-ftth-map-sheet__status-dot"></i><span class="inmov-ftth-map-sheet__status-text"></span></span><span class="inmov-ftth-map-sheet__code"></span></div>' +
+					'<h3 class="inmov-ftth-map-sheet__title"></h3>' +
+					'<p class="inmov-ftth-map-sheet__locality"><span aria-hidden="true">⌖</span><span class="inmov-ftth-map-sheet__locality-text"></span></p>' +
+				'</div>' +
+				'<div class="inmov-ftth-map-sheet__header-actions"><button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button></div>' +
+			'</div>' +
+			'<div class="inmov-ftth-map-sheet__body"></div>' +
+			'<div class="inmov-ftth-map-sheet__footer">' +
+				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="center">⌾ <span>Centralizar</span></button>' +
+				'<button type="button" class="inmov-ftth-map-sheet__action is-hidden" data-sheet-action="copy-coordinates">▣ <span>Copiar coordenadas</span></button>' +
+			'</div>';
+		container.parentNode.appendChild(sheet);
+		if (!sheet.querySelector) return;
 		var closeButton = sheet.querySelector && sheet.querySelector('.inmov-ftth-map-sheet__close');
-		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', function () { if (sheet.classList) sheet.classList.remove('is-open'); clearPointSelection(); clearRouteSelection(); });
+		var closeSheet = function () { if (sheet.classList) sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); clearPointSelection(); clearRouteSelection(); };
+		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', closeSheet);
+		var handle = sheet.querySelector('.inmov-ftth-map-sheet__handle');
+		if (handle && handle.addEventListener) {
+			handle.addEventListener('click', function () { sheet.classList.toggle('is-expanded'); });
+			handle.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); sheet.classList.toggle('is-expanded'); } });
+		}
+		var centerButton = sheet.querySelector('[data-sheet-action="center"]');
+		if (centerButton && centerButton.addEventListener) centerButton.addEventListener('click', function () {
+			var center = sheet.__inmovFtthCenter;
+			if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
+		});
+		var copyButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
+		if (copyButton && copyButton.addEventListener) copyButton.addEventListener('click', function () { copySheetValue(sheet.__inmovFtthCoordinates || ''); copyButton.classList.add('is-copied'); window.setTimeout(function () { copyButton.classList.remove('is-copied'); }, 1400); });
 		var records = markerRecords(container);
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
@@ -872,7 +978,7 @@
 				selectRoute(record, feature);
 
 				var props = feature.properties || {};
-				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat]);
+				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers ? props.fibers + ' FO' : ''], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat], { kind: 'route', type: props.routeType, status: props.status, code: props._ID || props.id || feature.id, locality: props.locality });
 				return;
 				/* Native floating popup kept below for backward compatibility. */
 				var card = document.createElement('div');

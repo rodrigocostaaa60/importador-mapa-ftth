@@ -561,7 +561,20 @@
 		var lng = Number(center[0]);
 		var lat = Number(center[1]);
 		if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-		var destination = encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6));
+		var coordinates = lat.toFixed(6) + ',' + lng.toFixed(6);
+		var destination = encodeURIComponent(coordinates);
+		var userAgent = String((window.navigator && window.navigator.userAgent) || '');
+		var isAndroid = /Android/i.test(userAgent);
+		var isAppleMobile = /iPhone|iPad|iPod/i.test(userAgent);
+		if (isAndroid) {
+			// Intent nativo abre o app sem substituir a URL da aba do nosso mapa.
+			window.location.href = 'intent://maps.google.com/?daddr=' + destination + '&directionsmode=driving#Intent;scheme=https;package=com.google.android.apps.maps;end';
+			return;
+		}
+		if (isAppleMobile) {
+			window.location.href = 'comgooglemaps://?daddr=' + destination + '&directionsmode=driving';
+			return;
+		}
 		var url = 'https://www.google.com/maps/dir/?api=1&destination=' + destination + '&travelmode=driving&dir_action=navigate';
 		var opened = null;
 		try { opened = window.open(url, '_blank', 'noopener,noreferrer'); } catch (error) {}

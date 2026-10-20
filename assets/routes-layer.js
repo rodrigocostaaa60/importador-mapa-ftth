@@ -299,6 +299,8 @@
 		if (!event) return null;
 		var iosHeading = Number(event.webkitCompassHeading);
 		if (Number.isFinite(iosHeading)) return (iosHeading + 360) % 360;
+		var compassHeading = Number(event.compassHeading ?? event.heading);
+		if (Number.isFinite(compassHeading) && compassHeading >= 0) return (compassHeading + 360) % 360;
 		var alpha = Number(event.alpha);
 		if (!Number.isFinite(alpha)) return null;
 		var screenAngle = 0;
@@ -327,7 +329,14 @@
 		};
 		window.addEventListener('deviceorientationabsolute', handler, true);
 		window.addEventListener('deviceorientation', handler, true);
+		window.addEventListener('deviceorientationrelative', handler, true);
 		map.__inmovFtthOrientationHandler = handler;
+	}
+
+	function rotateToHeading(map, heading) {
+		heading = Number(heading);
+		if (!map || !Number.isFinite(heading) || heading < 0 || typeof map.rotateTo !== 'function') return;
+		try { map.rotateTo((heading + 360) % 360, { duration: 0 }); } catch (error) {}
 	}
 
 	function requestDeviceOrientationPermission(map) {
@@ -481,6 +490,9 @@
 				if (event && Number.isFinite(event.longitude) && Number.isFinite(event.latitude) && typeof map.flyTo === 'function') {
 					userPosition = [event.longitude, event.latitude];
 					enableDeviceOrientation(map);
+					var eventHeading = event.heading;
+					if (event.coords && Number.isFinite(Number(event.coords.heading))) eventHeading = event.coords.heading;
+					if (Number.isFinite(Number(eventHeading)) && Number(eventHeading) >= 0) rotateToHeading(map, eventHeading);
 					if (!map.__inmovFtthFirstGeolocateHandled) {
 						map.__inmovFtthFirstGeolocateHandled = true;
 						map.flyTo({ center: [event.longitude, event.latitude], zoom: getDetailZoom(map, event.latitude), essential: true });

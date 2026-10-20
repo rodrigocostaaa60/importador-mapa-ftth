@@ -568,18 +568,28 @@
 			rows.forEach(function (row) {
 				if (row[1] === undefined || row[1] === null || row[1] === '') return;
 				var item = document.createElement('div');
+				var isCoordinates = /^coordenadas$/i.test(String(row[0]));
 				var wide = /observa|endere[cç]o|descri[cç]/i.test(String(row[0]));
 				item.className = 'inmov-ftth-map-sheet__row' + (wide ? ' is-wide' : '');
 				var label = document.createElement('span'); label.className = 'inmov-ftth-map-sheet__row-label'; label.textContent = row[0];
-				var value = document.createElement('strong'); value.className = 'inmov-ftth-map-sheet__row-value'; value.textContent = row[1];
-				item.appendChild(label); item.appendChild(value); body.appendChild(item);
+				var value = document.createElement('strong'); value.className = 'inmov-ftth-map-sheet__row-value' + (isCoordinates ? ' is-copyable' : ''); value.textContent = row[1];
+				item.appendChild(label);
+				if (isCoordinates) {
+					var valueWrap = document.createElement('div'); valueWrap.className = 'inmov-ftth-map-sheet__coordinate-value';
+					var copy = document.createElement('button'); copy.type = 'button'; copy.className = 'inmov-ftth-map-sheet__copy-inline'; copy.setAttribute('aria-label', 'Copiar coordenadas'); copy.title = 'Copiar coordenadas'; copy.innerHTML = '<span class="inmov-ftth-copy-icon" aria-hidden="true"></span>';
+					copy.addEventListener('click', function (event) { if (event && event.stopPropagation) event.stopPropagation(); copySheetValue(String(row[1])); copy.classList.add('is-copied'); window.setTimeout(function () { copy.classList.remove('is-copied'); }, 1400); });
+					valueWrap.appendChild(value); valueWrap.appendChild(copy); item.appendChild(valueWrap);
+				} else {
+					item.appendChild(value);
+				}
+				body.appendChild(item);
 			});
 		}
 		var coordinates = center && center.length === 2 ? center[1] + ', ' + center[0] : '';
 		sheet.__inmovFtthCenter = center;
 		sheet.__inmovFtthCoordinates = coordinates;
 		var coordinateButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
-		if (coordinateButton) coordinateButton.classList.toggle('is-hidden', !coordinates);
+		if (coordinateButton) coordinateButton.classList.add('is-hidden');
 		sheet.classList.add('is-open');
 		sheet.setAttribute('aria-hidden', 'false');
 		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });

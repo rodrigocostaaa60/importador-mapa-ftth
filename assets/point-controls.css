@@ -25,6 +25,11 @@
 .jet-map-listing .inmov-ftth-point-marker--selected>.jet-map-marker-default{transform:translate(var(--inmov-overlap-x,0px),var(--inmov-overlap-y,0px)) scale(1.2)!important;box-shadow:0 0 0 3px #fff,0 0 0 6px var(--inmov-point-color,#2563eb),0 0 20px rgba(15,23,42,.58)!important;}
 .jet-map-listing .jet-map-marker.inmov-ftth-point-marker.inmov-ftth-point-marker--selected{z-index:10000!important;}
 
+/* Os pontos ficam abaixo da interface; somente o ponto selecionado sobe acima dos demais. */
+.inmov-ftth-map-shell .mapboxgl-marker,.inmov-ftth-map-shell .jet-map-marker{z-index:10!important}
+.inmov-ftth-map-shell .mapboxgl-marker.inmov-ftth-map-marker--selected-container,.inmov-ftth-map-shell .jet-map-marker.inmov-ftth-point-marker--selected{z-index:1000!important}
+.inmov-ftth-map-shell .mapboxgl-ctrl-top-right,.inmov-ftth-map-shell .mapboxgl-ctrl-top-left,.inmov-ftth-map-shell .inmov-ftth-point-search{z-index:2000!important}
+
 /* Painel de detalhes redesenhado a partir do protótipo do Stitch. */
 .inmov-ftth-map-sheet{display:none;position:absolute;right:18px;bottom:18px;left:auto;z-index:5000!important;width:min(470px,calc(100% - 36px));max-height:min(82vh,760px);overflow:hidden;padding:0;border:1px solid #e5eaf2;border-radius:22px;background:#fff;color:#0f172a;box-shadow:0 18px 48px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transform:translateY(16px);opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease,max-height .25s ease}
 .inmov-ftth-map-sheet.is-open{display:flex;flex-direction:column;opacity:1;transform:translateY(0);pointer-events:auto}
@@ -48,10 +53,16 @@
 .inmov-ftth-map-sheet__close:hover{background:#f1f5f9;color:#0f172a}
 .inmov-ftth-map-sheet__body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:17px 18px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 .inmov-ftth-map-sheet__body::-webkit-scrollbar{width:5px}.inmov-ftth-map-sheet__body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
-.inmov-ftth-map-sheet__row{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:58px;padding:11px 12px;border:1px solid #e5eaf2;border-radius:13px;background:#fff}
+.inmov-ftth-map-sheet__row{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:58px;height:auto;overflow:hidden;padding:11px 12px;border:1px solid #e5eaf2;border-radius:13px;background:#fff}
 .inmov-ftth-map-sheet__row.is-wide{grid-column:1/-1;min-height:52px;background:#f8fafc}
 .inmov-ftth-map-sheet__row-label{color:#7890aa;font-size:10px;font-weight:700;letter-spacing:.045em;text-transform:uppercase;line-height:1.2}
 .inmov-ftth-map-sheet__row-value{display:block;min-width:0;color:#172033;font-size:13px;font-weight:600;line-height:1.35;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.inmov-ftth-map-sheet__coordinate-value{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.inmov-ftth-map-sheet__coordinate-value .inmov-ftth-map-sheet__row-value{flex:1;min-width:0}
+.inmov-ftth-map-sheet__copy-inline{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #d6dfeb;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;transition:background .16s ease,border-color .16s ease,color .16s ease}
+.inmov-ftth-map-sheet__copy-inline:hover{border-color:#aac2df;background:#f6f9fd;color:#0057b8}.inmov-ftth-map-sheet__copy-inline.is-copied{border-color:#9ee6c4;background:#ecfdf5;color:#047857}
+.inmov-ftth-copy-icon{position:relative;display:block;width:14px;height:14px;border:1.6px solid currentColor;border-radius:2px}
+.inmov-ftth-copy-icon:before{content:"";position:absolute;left:-4px;top:4px;width:10px;height:10px;border:1.6px solid currentColor;border-radius:2px;background:#fff}
 .inmov-ftth-map-sheet__footer{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid #edf1f6;background:#fff}
 .inmov-ftth-map-sheet__action{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 11px;border:1px solid #d6dfeb;border-radius:9px;background:#fff;color:#1e293b;font-size:12px;font-weight:650;line-height:1;cursor:pointer;transition:background .16s ease,border-color .16s ease,color .16s ease}
 .inmov-ftth-map-sheet__action:hover{border-color:#aac2df;background:#f6f9fd;color:#0057b8}.inmov-ftth-map-sheet__action.is-copied{border-color:#9ee6c4;background:#ecfdf5;color:#047857}.inmov-ftth-map-sheet__action.is-hidden{display:none}

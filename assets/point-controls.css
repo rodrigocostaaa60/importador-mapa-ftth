@@ -48,7 +48,7 @@
 .inmov-ftth-map-sheet__status-dot{display:block;width:6px;height:6px;border-radius:50%;background:var(--sheet-status-color,#10b981)}
 .inmov-ftth-map-sheet__code{margin-left:auto;color:#64748b;font:500 11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;flex:0 0 auto}
 .inmov-ftth-map-sheet__title{margin:0;color:#0f172a;font-size:17px;font-weight:750;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.inmov-ftth-map-sheet__title.is-marquee{width:max-content;max-width:none;overflow:visible;text-overflow:clip;animation:inmov-ftth-title-marquee 9s ease-in-out infinite}
+.inmov-ftth-map-sheet__title.is-marquee{width:max-content;max-width:none;overflow:visible;text-overflow:clip;animation:inmov-ftth-title-marquee 4.5s ease-in-out infinite}
 @keyframes inmov-ftth-title-marquee{0%,16%{transform:translateX(0)}84%,100%{transform:translateX(var(--inmov-title-shift))}}
 .inmov-ftth-map-sheet__locality{display:flex;align-items:center;gap:5px;margin:5px 0 0;color:#64748b;font-size:12px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .inmov-ftth-map-sheet__locality>span:first-child{color:#94a3b8;font-size:16px;line-height:10px}

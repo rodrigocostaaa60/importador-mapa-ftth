@@ -104,3 +104,10 @@
 .inmov-ftth-map-sheet__coordinate-value{width:100%;box-sizing:border-box}
 .inmov-ftth-map-sheet__copy-inline{align-self:center}
 @media(prefers-reduced-motion:reduce){.inmov-ftth-map-sheet__title.is-marquee{animation:none}}
+
+/* Marcadores selecionados continuam destacados entre os pontos, mas nunca
+ * podem atravessar a pesquisa, controles ou painel de detalhes. */
+.inmov-ftth-map-shell .jet-map-listing .mapboxgl-marker.inmov-ftth-map-marker--selected-container,
+.inmov-ftth-map-shell .jet-map-listing .jet-map-marker.inmov-ftth-point-marker.inmov-ftth-point-marker--selected{
+ z-index:1000!important;
+}

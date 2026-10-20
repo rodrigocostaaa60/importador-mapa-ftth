@@ -553,6 +553,8 @@
 		sheet.dataset.itemKind = options.kind || 'point';
 		sheet.dataset.itemType = visual.key;
 		sheet.dataset.status = statusKey;
+		sheet.dataset.itemId = options.id || '';
+		sheet.dataset.itemCode = options.code || '';
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__type', visual.label);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__status-text', status);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__code', options.code ? '#' + options.code : '');
@@ -590,7 +592,9 @@
 		var marker = groups && groups[id] && groups[id][0] && groups[id][0].marker;
 		clearRouteSelection();
 		selectPointMarker(marker);
-		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço', point.address], ['Capacidade', point.capacity ? point.capacity + ' portas' : ''], ['Observações', point.observation]], [point.lng, point.lat], { kind: 'point', type: point.type, status: point.status, code: point.code, locality: point.locality });
+		var updated = point.updatedAt ? point.updatedAt + (point.updatedBy ? ' por ' + point.updatedBy : '') : '';
+		var coordinates = Number(point.lat).toFixed(6) + ', ' + Number(point.lng).toFixed(6);
+		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço técnico', point.address], ['Coordenadas', coordinates], ['Capacidade', point.capacity ? point.capacity + ' portas' : ''], ['Última atualização', updated], ['Observações', point.observation]], [point.lng, point.lat], { kind: 'point', id: point.id, type: point.type, status: point.status, code: point.code, locality: point.locality });
 	}
 
 	function bindPointClickHandlers(map) {
@@ -722,13 +726,13 @@
 		var sheet = document.createElement('section');
 		sheet.className = 'inmov-ftth-map-sheet';
 		sheet.setAttribute('aria-hidden', 'true');
-		sheet.innerHTML = '<div class="inmov-ftth-map-sheet__handle" role="button" tabindex="0" aria-label="Expandir detalhes"><span></span></div>' +
+			sheet.innerHTML = '<div class="inmov-ftth-map-sheet__handle" role="button" tabindex="0" aria-label="Expandir detalhes"><span></span></div>' +
 			'<div class="inmov-ftth-map-sheet__header">' +
 				'<div class="inmov-ftth-map-sheet__icon" aria-hidden="true">•</div>' +
 				'<div class="inmov-ftth-map-sheet__heading">' +
-					'<div class="inmov-ftth-map-sheet__meta"><span class="inmov-ftth-map-sheet__type"></span><span class="inmov-ftth-map-sheet__status"><i class="inmov-ftth-map-sheet__status-dot"></i><span class="inmov-ftth-map-sheet__status-text"></span></span><span class="inmov-ftth-map-sheet__code"></span></div>' +
+					'<div class="inmov-ftth-map-sheet__meta"><span class="inmov-ftth-map-sheet__type"></span><span class="inmov-ftth-map-sheet__status"><i class="inmov-ftth-map-sheet__status-dot"></i><span class="inmov-ftth-map-sheet__status-text"></span></span></div>' +
 					'<h3 class="inmov-ftth-map-sheet__title"></h3>' +
-					'<p class="inmov-ftth-map-sheet__locality"><span aria-hidden="true">⌖</span><span class="inmov-ftth-map-sheet__locality-text"></span></p>' +
+					'<p class="inmov-ftth-map-sheet__locality"><span aria-hidden="true">⌖</span><span class="inmov-ftth-map-sheet__locality-text"></span><span class="inmov-ftth-map-sheet__code"></span></p>' +
 				'</div>' +
 				'<div class="inmov-ftth-map-sheet__header-actions"><button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button></div>' +
 			'</div>' +
@@ -736,6 +740,7 @@
 			'<div class="inmov-ftth-map-sheet__footer">' +
 				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="center">⌾ <span>Centralizar</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action is-hidden" data-sheet-action="copy-coordinates">▣ <span>Copiar coordenadas</span></button>' +
+				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit" data-sheet-action="edit">✎ <span>Editar</span></button>' +
 			'</div>';
 		container.parentNode.appendChild(sheet);
 		if (!sheet.querySelector) return;
@@ -754,6 +759,13 @@
 		});
 		var copyButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
 		if (copyButton && copyButton.addEventListener) copyButton.addEventListener('click', function () { copySheetValue(sheet.__inmovFtthCoordinates || ''); copyButton.classList.add('is-copied'); window.setTimeout(function () { copyButton.classList.remove('is-copied'); }, 1400); });
+		var editButton = sheet.querySelector('[data-sheet-action="edit"]');
+		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function () {
+			var detail = { id: sheet.dataset.itemId || '', code: sheet.dataset.itemCode || '', kind: sheet.dataset.itemKind || '', type: sheet.dataset.itemType || '' };
+			try { document.dispatchEvent(new CustomEvent('inmov-ftth:edit-item', { detail: detail })); } catch (error) {}
+			var selector = config.editPopupSelector || '';
+			if (selector) { var trigger = document.querySelector(selector); if (trigger && typeof trigger.click === 'function') trigger.click(); }
+		});
 		var records = markerRecords(container);
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
@@ -978,7 +990,9 @@
 				selectRoute(record, feature);
 
 				var props = feature.properties || {};
-				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers ? props.fibers + ' FO' : ''], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat], { kind: 'route', type: props.routeType, status: props.status, code: props._ID || props.id || feature.id, locality: props.locality });
+				var updated = props.updatedAt ? props.updatedAt + (props.updatedBy ? ' por ' + props.updatedBy : '') : '';
+				var coordinates = Number(event.lngLat.lat).toFixed(6) + ', ' + Number(event.lngLat.lng).toFixed(6);
+				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers ? props.fibers + ' FO' : ''], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Coordenadas', coordinates], ['Última atualização', updated], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat], { kind: 'route', id: props._ID || props.id || feature.id, type: props.routeType, status: props.status, code: props._ID || props.id || feature.id, locality: props.locality });
 				return;
 				/* Native floating popup kept below for backward compatibility. */
 				var card = document.createElement('div');

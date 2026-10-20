@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.9.0
+ * Version: 0.9.1
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.9.0';
+	const VERSION               = '0.9.1';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -176,17 +176,32 @@ final class Inmov_JetEngine_FTTH_Importer {
 	public function get_points() {
 		global $wpdb;
 		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
-		$rows = $wpdb->get_results( "SELECT _ID, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND ponto_status <> 'inativo' LIMIT 3000", ARRAY_A );
+		$rows = $wpdb->get_results( "SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND ponto_status <> 'inativo' LIMIT 3000", ARRAY_A );
 		return rest_ensure_response( array_map( function( $row ) {
 			$saved_type = (string) $row['ponto_tipo'];
 			$inferred_type = $this->detect_point_type( strtolower( remove_accents( (string) $row['ponto_nome'] . ' ' . (string) $row['ponto_observacao'] ) ) );
 			$display_type = ( ( '' === $saved_type || 'outro' === $saved_type ) && 'outro' !== $inferred_type ) ? $inferred_type : $saved_type;
+			$audit = $this->cct_audit_data( $row['cct_modified'] ?? '', $row['cct_created'] ?? '', $row['cct_author_id'] ?? 0 );
 			return array(
 			'id' => (int) $row['_ID'], 'code' => (string) $row['ponto_codigo'], 'name' => (string) $row['ponto_nome'],
 			'type' => $display_type, 'locality' => (string) $row['ponto_localidade'], 'address' => (string) $row['ponto_endereco'],
 			'lat' => (float) $row['ponto_latitude'], 'lng' => (float) $row['ponto_longitude'], 'status' => (string) $row['ponto_status'],
 			'capacity' => (int) $row['ponto_capacidade_portas'], 'observation' => (string) $row['ponto_observacao'],
+			'updatedAt' => $audit['date'], 'updatedBy' => $audit['user'],
 		); }, $rows ) );
+	}
+
+	/** Format the CCT audit timestamp and creator without exposing database internals. */
+	private function cct_audit_data( $modified, $created, $author_id ) {
+		$value = $modified ?: $created;
+		$timestamp = is_numeric( $value ) ? (int) $value : ( $value ? strtotime( (string) $value ) : 0 );
+		$date = $timestamp ? wp_date( 'd/m/Y H:i', $timestamp, wp_timezone() ) : '';
+		$user = '';
+		$user_data = get_userdata( (int) $author_id );
+		if ( $user_data ) {
+			$user = $user_data->display_name ?: $user_data->user_login;
+		}
+		return array( 'date' => $date, 'user' => $user );
 	}
 
 	/** Return active route geometries as a bounded GeoJSON FeatureCollection. */
@@ -200,7 +215,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 
 		$sql = $wpdb->prepare(
-			"SELECT _ID, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_comprimento_metros, rota_geometria_geojson
+			"SELECT _ID, cct_author_id, cct_created, cct_modified, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_comprimento_metros, rota_geometria_geojson
 			FROM {$table}
 			WHERE cct_status = %s AND rota_status IN (%s, %s, %s)
 			ORDER BY _ID ASC LIMIT 3000",
@@ -238,6 +253,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			}
 
 			$color = sanitize_hex_color( $row['rota_cor_mapa'] );
+			$audit = $this->cct_audit_data( $row['cct_modified'] ?? '', $row['cct_created'] ?? '', $row['cct_author_id'] ?? 0 );
 			$features[] = array(
 				'type'       => 'Feature',
 				'id'         => (int) $row['_ID'],
@@ -250,6 +266,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 					'fibers'      => (int) $row['rota_quantidade_fibras'],
 					'status'      => (string) $row['rota_status'],
 					'lengthM'     => (int) $row['rota_comprimento_metros'],
+					'updatedAt'   => $audit['date'],
+					'updatedBy'   => $audit['user'],
 					'color'       => $color ?: '#f97316',
 				),
 			);
@@ -301,6 +319,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			array(
 				'endpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes' ) ),
 				'pointsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
+				'editPopupSelector' => '',
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
 		);

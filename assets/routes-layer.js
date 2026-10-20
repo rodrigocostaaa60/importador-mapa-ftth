@@ -126,11 +126,82 @@
 			});
 		});
 		applyOverlapOffsets(map);
+		updatePointClusters(map);
+	}
+
+	function updatePointClusters(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups || !map || typeof map.getZoom !== 'function' || typeof map.project !== 'function') return;
+		var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
+		if (!container) return;
+		var overlay = container.querySelector('.inmov-ftth-point-clusters');
+		var zoom = map.getZoom();
+		var clusteredMode = zoom < 13;
+		var markerItems = [];
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+				var element = marker.getElement();
+				if (!element) return;
+				if (!clusteredMode) {
+					element.classList.remove('inmov-ftth-point-marker--clustered');
+					return;
+				}
+				if (element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
+				try { markerItems.push({ marker: marker, element: element, point: map.project(marker.getLngLat()) }); } catch (error) {}
+			});
+		});
+		if (!clusteredMode) {
+			if (overlay) overlay.innerHTML = '';
+			return;
+		}
+		if (!overlay) {
+			overlay = document.createElement('div');
+			overlay.className = 'inmov-ftth-point-clusters';
+			container.appendChild(overlay);
+		}
+		overlay.innerHTML = '';
+		var bucketSize = zoom < 11 ? Infinity : 100;
+		var clusters = [];
+		markerItems.forEach(function (item) {
+			var cluster;
+			if (bucketSize === Infinity) {
+				cluster = clusters[0];
+			} else {
+				var key = Math.floor(item.point.x / bucketSize) + ':' + Math.floor(item.point.y / bucketSize);
+				cluster = clusters.find(function (candidate) { return candidate.key === key; });
+				if (!cluster) { cluster = { key: key, items: [] }; clusters.push(cluster); }
+			}
+			if (!cluster) { cluster = { key: 'all', items: [] }; clusters.push(cluster); }
+			cluster.items.push(item);
+		});
+		clusters.forEach(function (cluster) {
+			if (!cluster.items.length) return;
+			var x = cluster.items.reduce(function (sum, item) { return sum + item.point.x; }, 0) / cluster.items.length;
+			var y = cluster.items.reduce(function (sum, item) { return sum + item.point.y; }, 0) / cluster.items.length;
+			cluster.items.forEach(function (item) { item.element.classList.add('inmov-ftth-point-marker--clustered'); item.element.style.setProperty('--inmov-overlap-x', '0px'); item.element.style.setProperty('--inmov-overlap-y', '0px'); });
+			var bubble = document.createElement('button');
+			bubble.type = 'button'; bubble.className = 'inmov-ftth-point-cluster';
+			bubble.textContent = String(cluster.items.length);
+			bubble.setAttribute('aria-label', cluster.items.length + ' pontos nesta área');
+			bubble.style.left = Math.round(x) + 'px'; bubble.style.top = Math.round(y) + 'px';
+			bubble.addEventListener('click', function (event) {
+				if (event && event.stopPropagation) event.stopPropagation();
+				var center = map.unproject ? map.unproject([x, y]) : null;
+				if (center && typeof map.flyTo === 'function') map.flyTo({ center: [center.lng, center.lat], zoom: 13, essential: true });
+			});
+			overlay.appendChild(bubble);
+		});
 	}
 
 	function applyOverlapOffsets(map) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		if (!groups || !map || typeof map.project !== 'function') return;
+		if (typeof map.getZoom === 'function' && map.getZoom() < 13) {
+			Object.keys(groups).forEach(function (id) { (groups[id] || []).forEach(function (entry) { var marker = entry && entry.marker; if (marker && marker.getElement) { marker.getElement().style.setProperty('--inmov-overlap-x', '0px'); marker.getElement().style.setProperty('--inmov-overlap-y', '0px'); } }); });
+			return;
+		}
 		var visible = [];
 		Object.keys(groups).forEach(function (id) {
 			(groups[id] || []).forEach(function (entry) {

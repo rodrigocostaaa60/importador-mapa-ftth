@@ -517,7 +517,11 @@
 	}
 
 	function sheetTypeVisual(kind, type) {
-		if ('route' === kind) return { key: 'route', label: type || 'Rota de fibra', glyph: '━', color: '#f97316', soft: '#fff7ed' };
+		if ('route' === kind) {
+			var routeColor = String(arguments[2] || '').trim();
+			if (!/^#[0-9a-f]{6}$/i.test(routeColor)) routeColor = '#f97316';
+			return { key: 'route', label: type || 'Rota de fibra', glyph: '━', color: routeColor, soft: routeColor + '1c' };
+		}
 		var visual = pointVisuals[normalizePointType(type)] || pointVisuals.outro;
 		return { key: normalizePointType(type), label: visual.label, glyph: visual.glyph, color: visual.color, soft: visual.color + '1c' };
 	}
@@ -539,7 +543,7 @@
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
 		options = options || {};
-		var visual = sheetTypeVisual(options.kind || 'point', options.type || '');
+		var visual = sheetTypeVisual(options.kind || 'point', options.type || '', options.color || '');
 		var status = normalizeSheetStatus(options.status);
 		var statusKey = String(options.status || '').toLowerCase().replace(/[_-]+/g, '-');
 		var icon = sheet.querySelector('.inmov-ftth-map-sheet__icon');
@@ -1002,7 +1006,7 @@
 				var props = feature.properties || {};
 				var updated = props.updatedAt ? props.updatedAt + (props.updatedBy ? ' por ' + props.updatedBy : '') : '';
 				var coordinates = Number(event.lngLat.lat).toFixed(6) + ', ' + Number(event.lngLat.lng).toFixed(6);
-				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers ? props.fibers + ' FO' : ''], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Coordenadas', coordinates], ['Última atualização', updated], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat], { kind: 'route', id: props._ID || props.id || feature.id, type: props.routeType, status: props.status, code: props._ID || props.id || feature.id, locality: props.locality });
+				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers ? props.fibers + ' FO' : ''], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Coordenadas', coordinates], ['Última atualização', updated], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat], { kind: 'route', id: props._ID || props.id || feature.id, type: props.routeType, status: props.status, code: props._ID || props.id || feature.id, locality: props.locality, color: props.ftthColor });
 				return;
 				/* Native floating popup kept below for backward compatibility. */
 				var card = document.createElement('div');

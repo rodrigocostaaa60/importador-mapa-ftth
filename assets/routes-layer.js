@@ -343,6 +343,7 @@
 		Object.keys(patch || {}).forEach(function (key) { state[key] = patch[key]; });
 		map.__inmovFtthLoadingState = state;
 		var host = container.parentNode || container;
+		if (!map.__inmovFtthLoadingOverlay && host && host.querySelector) map.__inmovFtthLoadingOverlay = host.querySelector('.inmov-ftth-map-loading');
 		if (!map.__inmovFtthLoadingOverlay && host && host.appendChild && document.createElement) {
 			var overlay = document.createElement('div');
 			overlay.className = 'inmov-ftth-map-loading';

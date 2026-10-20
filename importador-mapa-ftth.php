@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.8.7
+ * Version: 0.8.8
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.8.7';
+	const VERSION               = '0.8.8';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -35,6 +35,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'admin_post_inmov_ftth_import', array( $this, 'handle_import' ) );
 		add_action( 'rest_api_init', array( $this, 'register_routes_endpoint' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
+		add_action( 'wp_head', array( $this, 'print_map_loading_bootstrap' ), 1 );
 		add_action( 'wp_print_footer_scripts', array( $this, 'order_native_map_scripts' ), 1 );
 		add_filter( 'update_plugins_github.com', array( $this, 'filter_github_update' ), 10, 4 );
 		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_update_check_link' ) );
@@ -303,6 +304,51 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
 		);
+	}
+
+	/** Put the loading state in place before Elementor/JetEngine creates Mapbox. */
+	public function print_map_loading_bootstrap() {
+		if ( ! is_page( 3600 ) && ! is_page( 'mapa-da-rede-ftth' ) ) {
+			return;
+		}
+		?>
+		<script>
+		(function () {
+			'use strict';
+			var selector = '.jet-map-listing.mapbox-provider';
+			function mount(root) {
+				var nodes = [];
+				if (root && root.matches && root.matches(selector)) nodes.push(root);
+				if (root && root.querySelectorAll) Array.prototype.forEach.call(root.querySelectorAll(selector), function (node) { nodes.push(node); });
+				nodes.forEach(function (container) {
+					var host = container.parentNode || container;
+					if (!host || !host.appendChild || (host.querySelector && host.querySelector('.inmov-ftth-map-loading'))) return;
+					if (host.classList) host.classList.add('inmov-ftth-map-shell');
+					var overlay = document.createElement('div');
+					overlay.className = 'inmov-ftth-map-loading is-visible';
+					overlay.setAttribute('role', 'status');
+					overlay.setAttribute('aria-live', 'polite');
+					overlay.innerHTML = '<span class="inmov-ftth-map-loading__spinner" aria-hidden="true"></span><span class="inmov-ftth-map-loading__text">Carregando mapa, rotas e pontos…</span>';
+					host.appendChild(overlay);
+				});
+			}
+			function start() {
+				mount(document);
+				if (window.MutationObserver && document.documentElement) {
+					var observer = new MutationObserver(function (records) {
+						records.forEach(function (record) {
+							Array.prototype.forEach.call(record.addedNodes || [], function (node) { if (node.nodeType === 1) mount(node); });
+						});
+					});
+					observer.observe(document.documentElement, { childList: true, subtree: true });
+					window.setTimeout(function () { observer.disconnect(); }, 20000);
+				}
+			}
+			if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+			else start();
+		}());
+		</script>
+		<?php
 	}
 
 	public function register_menu() {

@@ -332,6 +332,48 @@
 		return Math.max(16, Math.min(20, zoom));
 	}
 
+	function updateMapLoading(container, map, patch) {
+		if (!container || !map) return;
+		var state = map.__inmovFtthLoadingState || {
+			map: true,
+			routes: true,
+			points: !!config.pointsEndpoint,
+			error: ''
+		};
+		Object.keys(patch || {}).forEach(function (key) { state[key] = patch[key]; });
+		map.__inmovFtthLoadingState = state;
+		var host = container.parentNode || container;
+		if (!map.__inmovFtthLoadingOverlay && host && host.appendChild && document.createElement) {
+			var overlay = document.createElement('div');
+			overlay.className = 'inmov-ftth-map-loading';
+			overlay.setAttribute('role', 'status');
+			overlay.setAttribute('aria-live', 'polite');
+			overlay.innerHTML = '<span class="inmov-ftth-map-loading__spinner" aria-hidden="true"></span><span class="inmov-ftth-map-loading__text"></span>';
+			host.appendChild(overlay);
+			map.__inmovFtthLoadingOverlay = overlay;
+		}
+		var loading = !!(state.map || state.routes || state.points);
+		var overlay = map.__inmovFtthLoadingOverlay;
+		if (!overlay || !overlay.classList) return;
+		overlay.classList.toggle('is-visible', loading || !!state.error);
+		var text = overlay.querySelector ? overlay.querySelector('.inmov-ftth-map-loading__text') : null;
+		if (!text) return;
+		if (state.error) {
+			text.textContent = state.error;
+			return;
+		}
+		var pending = [];
+		if (state.map) pending.push('mapa');
+		if (state.routes) pending.push('rotas');
+		if (state.points) pending.push('pontos');
+		text.textContent = pending.length ? 'Carregando ' + pending.join(' e ') + '…' : '';
+	}
+
+	function clearMapLoadingError(container, map) {
+		if (!map) return;
+		updateMapLoading(container, map, { error: '' });
+	}
+
 	function orientationHeading(event) {
 		if (!event) return null;
 		var iosHeading = Number(event.webkitCompassHeading);
@@ -485,6 +527,7 @@
 	function addMapControls(container, map) {
 		if (controlsAdded.has(container) || !window.mapboxgl) return;
 		controlsAdded.add(container);
+		updateMapLoading(container, map, {});
 		var nativeLocationControl = false;
 		try {
 			if (typeof window.mapboxgl.NavigationControl === 'function') map.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
@@ -563,7 +606,7 @@
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
-				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } }).catch(function () {});
+				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } updateMapLoading(container, map, { points: false }); }).catch(function () { updateMapLoading(container, map, { points: false }); });
 		}
 		var userPosition = null;
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
@@ -889,6 +932,7 @@
 			bindLayerEvents(record);
 			record.rendered = true;
 			record.renderRetryDelay = 1000;
+			updateMapLoading(record.container, record.map, { map: false, routes: false });
 		} catch (error) {
 			record.rendered = false;
 			scheduleRender(record);
@@ -904,6 +948,7 @@
 		if (existing) detachMap(existing);
 
 		var record = {
+			container: container,
 			map: map,
 			rendered: false,
 			layerEventsBound: false,
@@ -923,6 +968,7 @@
 		};
 		mapRecords.set(container, record);
 		addMapControls(container, map);
+		if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) updateMapLoading(container, map, { map: false });
 		trackedContainers.add(container);
 
 		try {
@@ -942,7 +988,11 @@
 			record.resizeObserver.observe(container);
 		}
 
-		fetchRoutes().then(function () { renderRoutes(record); });
+		fetchRoutes().then(function (data) {
+			if (!data) updateMapLoading(container, map, { routes: false, error: 'Não foi possível carregar as rotas. Tentando novamente…' });
+			else clearMapLoadingError(container, map);
+			renderRoutes(record);
+		});
 	}
 
 	function scanMaps() {

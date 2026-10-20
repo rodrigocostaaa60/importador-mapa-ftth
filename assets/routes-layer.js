@@ -34,6 +34,7 @@
 		poste: { label: 'Poste', glyph: '│', color: '#64748b' },
 		caixa_emenda: { label: 'Caixa de emenda', glyph: '✣', color: '#06b6d4' },
 		splitter: { label: 'Splitter', glyph: '◇', color: '#10b981' },
+		loja: { label: 'Loja / sede', glyph: '⌂', color: '#db2777' },
 		outro: { label: 'Outro', glyph: '•', color: '#475569' }
 	};
 
@@ -105,13 +106,22 @@
 		if (!groups || !map || typeof map.getBounds !== 'function') return;
 		var bounds;
 		try { bounds = map.getBounds(); } catch (error) { return; }
+		var southWest = bounds.getSouthWest ? bounds.getSouthWest() : null;
+		var northEast = bounds.getNorthEast ? bounds.getNorthEast() : null;
+		var latMargin = southWest && northEast ? Math.max(0.002, (northEast.lat - southWest.lat) * 1.5) : 0.01;
+		var lngMargin = southWest && northEast ? Math.max(0.002, (northEast.lng - southWest.lng) * 1.5) : 0.01;
 		Object.keys(groups).forEach(function (id) {
 			(groups[id] || []).forEach(function (entry) {
 				var marker = entry && entry.marker;
 				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
 				var element = marker.getElement();
 				var visible = false;
-				try { visible = bounds.contains(marker.getLngLat()); } catch (error) {}
+				try {
+					var position = marker.getLngLat();
+					visible = southWest && northEast
+						? position.lat >= southWest.lat - latMargin && position.lat <= northEast.lat + latMargin && position.lng >= southWest.lng - lngMargin && position.lng <= northEast.lng + lngMargin
+						: bounds.contains(position);
+				} catch (error) {}
 				if (element && element.classList) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
 			});
 		});
@@ -161,8 +171,8 @@
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var height = container && container.clientHeight ? Math.max(240, Math.min(container.clientHeight, 900)) : 600;
 		var cos = Math.max(0.2, Math.cos((Number(latitude) || 0) * Math.PI / 180));
-		// Target approximately 200 m across the visible map height.
-		var zoom = Math.log((cos * 40075016 * height) / (512 * 200)) / Math.LN2;
+		// Target approximately 500 m across the visible map height.
+		var zoom = Math.log((cos * 40075016 * height) / (512 * 500)) / Math.LN2;
 		return Math.max(16, Math.min(20, zoom));
 	}
 
@@ -224,6 +234,33 @@
 		controlsAdded.add(container);
 		try {
 			if (typeof window.mapboxgl.NavigationControl === 'function') map.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
+			var globeControl = {
+				onAdd: function (mapInstance) {
+					this._map = mapInstance;
+					this._container = document.createElement('div');
+					this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group inmov-ftth-globe-control';
+					this._button = document.createElement('button');
+					this._button.type = 'button';
+					this._button.className = 'inmov-ftth-globe-control__button';
+					this._button.innerHTML = '<span aria-hidden="true">🌐</span>';
+					this._button.setAttribute('aria-label', 'Alternar mapa de satélite');
+					this._button.title = 'Alternar mapa de satélite';
+					this._button.addEventListener('click', function (event) {
+						if (event && event.stopPropagation) event.stopPropagation();
+						var next = mapInstance.__inmovFtthAlternateStyle ? defaultMapStyle : alternateMapStyle;
+						mapInstance.__inmovFtthAlternateStyle = !mapInstance.__inmovFtthAlternateStyle;
+						this.classList.toggle('is-active', mapInstance.__inmovFtthAlternateStyle);
+						try { if (typeof mapInstance.setStyle === 'function') mapInstance.setStyle(next); } catch (error) {}
+					}.bind(this._button));
+					this._container.appendChild(this._button);
+					return this._container;
+				},
+				onRemove: function () {
+					if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container);
+					this._map = null;
+				}
+			};
+			if (typeof window.mapboxgl.Control === 'function' || globeControl.onAdd) map.addControl(globeControl, 'top-right');
 			if (typeof window.mapboxgl.GeolocateControl === 'function') map.addControl(new window.mapboxgl.GeolocateControl({
 				positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showUserHeading: true
 			}), 'top-right');
@@ -243,19 +280,6 @@
 		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
-		var styleWrap = document.createElement('div');
-		styleWrap.className = 'inmov-ftth-map-style mapboxgl-ctrl';
-		var styleButton = document.createElement('button');
-		styleButton.type = 'button'; styleButton.className = 'inmov-ftth-map-style__button';
-		styleButton.textContent = 'Mapa alternativo'; styleButton.setAttribute('aria-label', 'Alternar estilo do mapa');
-		styleWrap.appendChild(styleButton); container.parentNode.insertBefore(styleWrap, container);
-		styleButton.addEventListener('click', function (event) {
-			if (event && event.stopPropagation) event.stopPropagation();
-			var next = map.__inmovFtthAlternateStyle ? defaultMapStyle : alternateMapStyle;
-			map.__inmovFtthAlternateStyle = !map.__inmovFtthAlternateStyle;
-			styleButton.textContent = map.__inmovFtthAlternateStyle ? 'Mapa padrão' : 'Mapa alternativo';
-			try { if (typeof map.setStyle === 'function') map.setStyle(next); } catch (error) {}
-		});
 		if (!map.__inmovFtthStyleApplied) {
 			map.__inmovFtthStyleApplied = true;
 			try { if (typeof map.setStyle === 'function') map.setStyle(defaultMapStyle); } catch (error) {}

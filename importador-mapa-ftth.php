@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.6.1
+ * Version: 0.7.0
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.6.1';
+	const VERSION               = '0.7.0';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -597,11 +597,13 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 		// CTOs and CTs are frequently exported with engineering codes such as
 		// "CT 05.01.02" or "CT.01.01.01" instead of the full CTO label.
-		if ( preg_match( '/\bcto\b|\bcep\b|\bct(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b/', $text ) ) return 'cto';
+		if ( preg_match( '/\bcto\b|\bcep(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b|\bct(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b/', $text ) ) return 'cto';
 		// CEO PON and optical splice-box nomenclature identify a caixa de emenda.
 		if ( preg_match( '/\bceo\b|\bcaixa\s+(?:optica|de\s+emenda)|\b(?:cx|caixa)\s+(?:optica\s+)?(?:de\s+)?emenda\b/', $text ) ) return 'caixa_emenda';
 		if ( preg_match( '/\bposte(s)?\b/', $text ) ) return 'poste';
 		if ( preg_match( '/\bsplitter\b/', $text ) ) return 'splitter';
+		if ( preg_match( '/\bcaixa(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b/', $text ) ) return 'cto';
+		if ( preg_match( '/\bloja\b|\bsede\b|\bescritorio\b/', $text ) ) return 'loja';
 		return 'outro';
 	}
 
@@ -750,7 +752,10 @@ final class Inmov_JetEngine_FTTH_Importer {
 			try {
 				if ( 'point' === $record['kind'] ) {
 					$point_type = $point_types[ $index ] ?? $record['point_type'];
-					if ( ! in_array( $point_type, array( 'pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'outro' ), true ) ) throw new RuntimeException( 'Tipo de ponto inválido.' );
+					if ( ! in_array( $point_type, array( 'pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'loja', 'outro' ), true ) ) throw new RuntimeException( 'Tipo de ponto inválido.' );
+					// Loja/sede is a visual classification; keep the CCT value compatible
+					// with existing JetEngine select options and infer it on the map feed.
+					$point_type_storage = 'loja' === $point_type ? 'outro' : $point_type;
 					if ( $this->find_existing( 'pontos_rede_ftth', 'ponto_chave_origem', $record['source_key'] ) ) {
 						$counts['existing']++;
 						$counts['skipped']++;
@@ -760,7 +765,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 					$data = array(
 						'ponto_codigo' => 'IMP-P-' . strtoupper( substr( hash( 'sha256', $record['source_key'] ), 0, 10 ) ),
 						'ponto_nome' => sanitize_text_field( $record['name'] ),
-						'ponto_tipo' => $point_type,
+						'ponto_tipo' => $point_type_storage,
 						'ponto_localidade' => $locality,
 						'ponto_latitude' => (string) $record['coordinates'][1],
 						'ponto_longitude' => (string) $record['coordinates'][0],
@@ -948,7 +953,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 					<td><?php if ( ! empty( $record['valid'] ) ) : ?><input type="checkbox" class="ftth-include" name="include[]" value="<?php echo esc_attr( $index ); ?>" <?php checked( ! empty( $record['selected'] ) ); ?> <?php disabled( 'same_source' === ( $record['existing'] ?? '' ) ); ?>><?php if ( 'same_source' === ( $record['existing'] ?? '' ) ) echo '<br><small>Já importado</small>'; ?><?php else : ?><span class="ftth-error">—</span><?php endif; ?></td>
 					<td>
 						<?php if ( 'point' === $record['kind'] ) : ?>
-							Ponto<br><select name="point_type[<?php echo esc_attr( $index ); ?>]"><?php foreach ( array( 'pop' => 'POP', 'olt' => 'OLT', 'cto' => 'CTO', 'poste' => 'Poste', 'caixa_emenda' => 'Caixa de emenda', 'splitter' => 'Splitter', 'outro' => 'Outro' ) as $value => $label ) : ?><option value="<?php echo esc_attr( $value ); ?>" <?php selected( $record['point_type'], $value ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select>
+							Ponto<br><select name="point_type[<?php echo esc_attr( $index ); ?>]"><?php foreach ( array( 'pop' => 'POP', 'olt' => 'OLT', 'cto' => 'CTO', 'poste' => 'Poste', 'caixa_emenda' => 'Caixa de emenda', 'splitter' => 'Splitter', 'loja' => 'Loja / sede', 'outro' => 'Outro' ) as $value => $label ) : ?><option value="<?php echo esc_attr( $value ); ?>" <?php selected( $record['point_type'], $value ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select>
 						<?php elseif ( 'line' === $record['kind'] ) : ?>
 							Rota<br><select name="route_type[<?php echo esc_attr( $index ); ?>]"><?php foreach ( array( 'backbone' => 'Backbone', 'alimentacao' => 'Alimentação', 'distribuicao' => 'Distribuição', 'drop' => 'Drop', 'outro' => 'Outro' ) as $value => $label ) : ?><option value="<?php echo esc_attr( $value ); ?>" <?php selected( $record['route_type'], $value ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select>
 						<?php else : ?>Área/erro<?php endif; ?>

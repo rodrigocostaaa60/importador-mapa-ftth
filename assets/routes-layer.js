@@ -161,7 +161,7 @@
 					return;
 				}
 				if (element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
-				try { markerItems.push({ marker: marker, element: element, point: map.project(marker.getLngLat()) }); } catch (error) {}
+				try { markerItems.push({ id: id, marker: marker, element: element, point: map.project(marker.getLngLat()) }); } catch (error) {}
 			});
 		});
 		if (!clusteredMode) {
@@ -174,12 +174,26 @@
 			container.appendChild(overlay);
 		}
 		overlay.innerHTML = '';
+		var globalClusterMode = zoom < 4.5;
 		var bucketSize = zoom < 11 ? Infinity : 100;
 		var clusters = [];
 		markerItems.forEach(function (item) {
 			var cluster;
 			if (bucketSize === Infinity) {
-				cluster = clusters[0];
+				if (globalClusterMode) {
+					cluster = clusters[0];
+				} else {
+					var point = pointRecords[item.id] || {};
+					var locality = String(point.locality || point.cidade || point.city || point.municipio || '').trim();
+					var localityKey = locality.toLowerCase();
+					if (locality.normalize) localityKey = localityKey.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+					localityKey = localityKey.replace(/\s+/g, ' ') || '__unknown__';
+					cluster = clusters.find(function (candidate) { return candidate.key === 'city:' + localityKey; });
+					if (!cluster) {
+						cluster = { key: 'city:' + localityKey, label: locality || 'Sem localidade', items: [] };
+						clusters.push(cluster);
+					}
+				}
 			} else {
 				var key = Math.floor(item.point.x / bucketSize) + ':' + Math.floor(item.point.y / bucketSize);
 				cluster = clusters.find(function (candidate) { return candidate.key === key; });
@@ -195,8 +209,9 @@
 			cluster.items.forEach(function (item) { item.element.classList.add('inmov-ftth-point-marker--clustered'); item.element.style.setProperty('--inmov-overlap-x', '0px'); item.element.style.setProperty('--inmov-overlap-y', '0px'); });
 			var bubble = document.createElement('button');
 			bubble.type = 'button'; bubble.className = 'inmov-ftth-point-cluster';
-			bubble.textContent = String(cluster.items.length);
-			bubble.setAttribute('aria-label', cluster.items.length + ' pontos nesta área');
+			var clusterLabel = cluster.label ? cluster.label + ' · ' + cluster.items.length : String(cluster.items.length);
+			bubble.textContent = clusterLabel;
+			bubble.setAttribute('aria-label', clusterLabel + ' pontos');
 			bubble.style.left = Math.round(x) + 'px'; bubble.style.top = Math.round(y) + 'px';
 			bubble.addEventListener('click', function (event) {
 				if (event && event.stopPropagation) event.stopPropagation();

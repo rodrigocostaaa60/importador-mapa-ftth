@@ -609,7 +609,25 @@
 			});
 			map.on('trackuserlocationstart', function () { enableDeviceOrientation(map); });
 			map.on('trackuserlocationend', function () { map.__inmovFtthOrientationEnabled = false; });
-			map.on('dragstart', function () { map.__inmovFtthOrientationEnabled = false; });
+			map.on('mousedown', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; });
+			map.on('touchstart', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; });
+			map.on('dragstart', function () {
+				map.__inmovFtthOrientationEnabled = false;
+				map.__inmovFtthMapMoved = true;
+			});
+			map.on('click', function (event) {
+				var moved = !!map.__inmovFtthMapMoved;
+				map.__inmovFtthMapPointerActive = false;
+				map.__inmovFtthMapMoved = false;
+				if (moved) return;
+				var originalTarget = event && event.originalEvent && event.originalEvent.target;
+				var isInteractive = originalTarget && originalTarget.closest && originalTarget.closest('.jet-map-marker, .mapboxgl-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-map-sheet');
+				if (isInteractive) return;
+				var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
+				if (sheet && sheet.classList) sheet.classList.remove('is-open');
+				clearPointSelection();
+				clearRouteSelection();
+			});
 			map.on('moveend', function () { updateMarkerVisibility(map); });
 			map.on('move', function () { scheduleMarkerVisibility(map); });
 			map.on('zoomend', function () { updateMarkerVisibility(map); });

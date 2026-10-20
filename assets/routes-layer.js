@@ -688,6 +688,44 @@
 		return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
 	}
 
+	function createMapLegend(container) {
+		var parent = container && container.parentNode;
+		if (!parent || typeof parent.querySelector !== 'function' || typeof parent.insertBefore !== 'function' || parent.querySelector('.inmov-ftth-map-legend')) return;
+		var legend = document.createElement('div');
+		legend.className = 'inmov-ftth-map-legend';
+		legend.setAttribute('aria-label', 'Legenda técnica do mapa');
+		var pointsRow = document.createElement('div');
+		pointsRow.className = 'inmov-ftth-map-legend__row';
+		var pointsLabel = document.createElement('span');
+		pointsLabel.className = 'inmov-ftth-map-legend__label';
+		pointsLabel.textContent = 'Pontos:';
+		pointsRow.appendChild(pointsLabel);
+		Object.keys(pointVisuals).forEach(function (key) {
+			var visual = pointVisuals[key];
+			var item = document.createElement('span');
+			item.className = 'inmov-ftth-map-legend__item';
+			item.title = visual.label;
+			item.innerHTML = '<i style="--legend-color:' + visual.color + '"></i><span>' + visual.label + '</span>';
+			pointsRow.appendChild(item);
+		});
+		var cablesRow = document.createElement('div');
+		cablesRow.className = 'inmov-ftth-map-legend__row is-cables';
+		var cablesLabel = document.createElement('span');
+		cablesLabel.className = 'inmov-ftth-map-legend__label';
+		cablesLabel.textContent = 'Cabos:';
+		cablesRow.appendChild(cablesLabel);
+		Object.keys(fiberStyles).forEach(function (fiberCount) {
+			var style = fiberStyles[fiberCount];
+			var item = document.createElement('span');
+			item.className = 'inmov-ftth-map-legend__item';
+			item.innerHTML = '<i class="is-line" style="--legend-color:' + style[0] + '"></i><span>' + fiberCount + 'FO</span>';
+			cablesRow.appendChild(item);
+		});
+		legend.appendChild(pointsRow);
+		legend.appendChild(cablesRow);
+		parent.insertBefore(legend, container);
+	}
+
 	function addMapControls(container, map) {
 		if (controlsAdded.has(container) || !window.mapboxgl) return;
 		controlsAdded.add(container);
@@ -730,6 +768,56 @@
 				nativeLocationControl = true;
 				map.__inmovFtthGeolocateControl = geolocateControl;
 			}
+			var layersControl = {
+				onAdd: function (mapInstance) {
+					this._map = mapInstance;
+					this._container = document.createElement('div');
+					this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group inmov-ftth-layers-control';
+					this._button = document.createElement('button');
+					this._button.type = 'button';
+					this._button.className = 'inmov-ftth-map-control__button';
+					this._button.setAttribute('aria-label', 'Alternar legenda técnica');
+					this._button.title = 'Alternar legenda técnica';
+					this._button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+					this._button.addEventListener('click', function (event) {
+						if (event && event.stopPropagation) event.stopPropagation();
+						var legend = container.parentNode && container.parentNode.querySelector('.inmov-ftth-map-legend');
+						if (!legend) return;
+						var hidden = legend.classList.toggle('is-hidden');
+						this.classList.toggle('is-active', !hidden);
+					}.bind(this._button));
+					this._container.appendChild(this._button);
+					return this._container;
+				},
+				onRemove: function () { if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container); this._map = null; }
+			};
+			map.addControl(layersControl, 'top-right');
+			var refreshControl = {
+				onAdd: function (mapInstance) {
+					this._map = mapInstance;
+					this._container = document.createElement('div');
+					this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group inmov-ftth-refresh-control';
+					this._button = document.createElement('button');
+					this._button.type = 'button';
+					this._button.className = 'inmov-ftth-map-control__button';
+					this._button.setAttribute('aria-label', 'Atualizar dados da rede');
+					this._button.title = 'Atualizar dados da rede';
+					this._button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-13.6-5.7L4 7.7M4 4v3.7h3.7M4 13a8 8 0 0 0 13.6 5.7L20 16.3M20 20v-3.7h-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+					this._button.addEventListener('click', function (event) {
+						if (event && event.stopPropagation) event.stopPropagation();
+						this.classList.add('is-loading');
+						routeData = null;
+						requestPromise = null;
+						fetchRoutes().then(function (data) {
+							if (data && mapInstance.getSource && mapInstance.getSource(sourceId) && mapInstance.getSource(sourceId).setData) mapInstance.getSource(sourceId).setData(data);
+						}).finally(function () { window.setTimeout(function () { this.classList.remove('is-loading'); }.bind(this), 350); }.bind(this));
+					}.bind(this._button));
+					this._container.appendChild(this._button);
+					return this._container;
+				},
+				onRemove: function () { if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container); this._map = null; }
+			};
+			map.addControl(refreshControl, 'top-right');
 			map.on('geolocate', function (event) {
 				if (event && Number.isFinite(event.longitude) && Number.isFinite(event.latitude) && typeof map.flyTo === 'function') {
 					userPosition = [event.longitude, event.latitude];
@@ -777,6 +865,7 @@
 		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
+		createMapLegend(container);
 		if (!map.__inmovFtthStyleApplied) {
 			map.__inmovFtthStyleApplied = true;
 			try { if (typeof map.setStyle === 'function') map.setStyle(defaultMapStyle); } catch (error) {}

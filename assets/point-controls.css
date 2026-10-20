@@ -75,3 +75,26 @@
  .inmov-ftth-map-sheet__footer{padding:10px 16px;padding-bottom:max(10px,env(safe-area-inset-bottom))}
  .inmov-ftth-map-sheet__action{flex:1;min-height:38px}
 }
+
+/* O corpo do painel é flexível e cada cartão cresce com o conteúdo.
+ * Isso evita que observações longas sejam cortadas pela altura mínima da
+ * linha ou pelo cálculo de altura do grid em telas menores. */
+.inmov-ftth-map-sheet__body{
+ min-height:0;
+ flex:1 1 auto;
+ align-content:start;
+ grid-auto-rows:max-content;
+}
+.inmov-ftth-map-sheet__row,
+.inmov-ftth-map-sheet__row.is-wide{
+ min-height:0;
+ height:auto;
+ overflow:visible;
+ align-self:start;
+}
+.inmov-ftth-map-sheet__row-value,
+.inmov-ftth-map-sheet__coordinate-value{
+ overflow:visible;
+}
+.inmov-ftth-map-sheet__coordinate-value{width:100%;box-sizing:border-box}
+.inmov-ftth-map-sheet__copy-inline{align-self:center}

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.5.9
+ * Version: 0.6.0
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.5.9';
+	const VERSION               = '0.6.0';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -597,7 +597,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 		// CTOs and CTs are frequently exported with engineering codes such as
 		// "CT 05.01.02" or "CT.01.01.01" instead of the full CTO label.
-		if ( preg_match( '/\bcto\b|\bct(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b/', $text ) ) return 'cto';
+		if ( preg_match( '/\bcto\b|\bcep\b|\bct(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b/', $text ) ) return 'cto';
 		// CEO PON and optical splice-box nomenclature identify a caixa de emenda.
 		if ( preg_match( '/\bceo\b|\bcaixa\s+(?:optica|de\s+emenda)|\b(?:cx|caixa)\s+(?:optica\s+)?(?:de\s+)?emenda\b/', $text ) ) return 'caixa_emenda';
 		if ( preg_match( '/\bposte(s)?\b/', $text ) ) return 'poste';

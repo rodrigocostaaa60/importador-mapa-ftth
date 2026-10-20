@@ -22,6 +22,8 @@
 	var selectedPointElement = null;
 	var selectedRouteRecord = null;
 	var selectedRouteId = null;
+	var defaultMapStyle = 'mapbox://styles/mapbox/outdoors-v12';
+	var alternateMapStyle = 'mapbox://styles/mapbox/streets-v12';
 
 	var pointVisuals = {
 		pop: { label: 'POP', glyph: '▣', color: '#7c3aed' },
@@ -37,6 +39,8 @@
 		var raw = String(value || '').toLowerCase().trim();
 		if (raw.normalize) raw = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 		raw = raw.replace(/[\s-]+/g, '_');
+		if (raw === 'cep') return 'cto';
+		if (raw === 'ceo') return 'caixa_emenda';
 		if (raw === 'caixa_de_emenda' || raw === 'caixa_emenda') return 'caixa_emenda';
 		return pointVisuals[raw] ? raw : 'outro';
 	}
@@ -91,6 +95,24 @@
 				if (marker && marker._map === map) decoratePointMarker(marker, pointRecords[id] || {});
 			});
 		});
+		updateMarkerVisibility(map);
+	}
+
+	function updateMarkerVisibility(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups || !map || typeof map.getBounds !== 'function') return;
+		var bounds;
+		try { bounds = map.getBounds(); } catch (error) { return; }
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+				var element = marker.getElement();
+				var visible = false;
+				try { visible = bounds.contains(marker.getLngLat()); } catch (error) {}
+				if (element && element.classList) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
+			});
+		});
 	}
 
 	function clearRouteSelection() {
@@ -137,8 +159,8 @@
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var height = container && container.clientHeight ? Math.max(240, Math.min(container.clientHeight, 900)) : 600;
 		var cos = Math.max(0.2, Math.cos((Number(latitude) || 0) * Math.PI / 180));
-		// Target approximately 100 m across the visible map height.
-		var zoom = Math.log((cos * 40075016 * height) / (512 * 100)) / Math.LN2;
+		// Target approximately 200 m across the visible map height.
+		var zoom = Math.log((cos * 40075016 * height) / (512 * 200)) / Math.LN2;
 		return Math.max(16, Math.min(20, zoom));
 	}
 
@@ -208,6 +230,9 @@
 					map.flyTo({ center: [event.longitude, event.latitude], zoom: getDetailZoom(map, event.latitude), essential: true });
 				}
 			});
+			map.on('moveend', function () { updateMarkerVisibility(map); });
+			map.on('zoomend', function () { updateMarkerVisibility(map); });
+			map.on('resize', function () { updateMarkerVisibility(map); });
 		} catch (error) {}
 		var wrap = document.createElement('div');
 		wrap.className = 'inmov-ftth-point-search mapboxgl-ctrl';
@@ -216,6 +241,23 @@
 		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
+		var styleWrap = document.createElement('div');
+		styleWrap.className = 'inmov-ftth-map-style mapboxgl-ctrl';
+		var styleButton = document.createElement('button');
+		styleButton.type = 'button'; styleButton.className = 'inmov-ftth-map-style__button';
+		styleButton.textContent = 'Mapa alternativo'; styleButton.setAttribute('aria-label', 'Alternar estilo do mapa');
+		styleWrap.appendChild(styleButton); container.parentNode.insertBefore(styleWrap, container);
+		styleButton.addEventListener('click', function (event) {
+			if (event && event.stopPropagation) event.stopPropagation();
+			var next = map.__inmovFtthAlternateStyle ? defaultMapStyle : alternateMapStyle;
+			map.__inmovFtthAlternateStyle = !map.__inmovFtthAlternateStyle;
+			styleButton.textContent = map.__inmovFtthAlternateStyle ? 'Mapa padrão' : 'Mapa alternativo';
+			try { if (typeof map.setStyle === 'function') map.setStyle(next); } catch (error) {}
+		});
+		if (!map.__inmovFtthStyleApplied) {
+			map.__inmovFtthStyleApplied = true;
+			try { if (typeof map.setStyle === 'function') map.setStyle(defaultMapStyle); } catch (error) {}
+		}
 		var sheet = document.createElement('section'); sheet.className = 'inmov-ftth-map-sheet'; sheet.innerHTML = '<button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button><h3 class="inmov-ftth-map-sheet__title"></h3><div class="inmov-ftth-map-sheet__body"></div>'; container.parentNode.appendChild(sheet);
 		var closeButton = sheet.querySelector && sheet.querySelector('.inmov-ftth-map-sheet__close');
 		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', function () { if (sheet.classList) sheet.classList.remove('is-open'); clearPointSelection(); clearRouteSelection(); });
@@ -223,7 +265,7 @@
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
-				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); render(); } }).catch(function () {});
+				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } }).catch(function () {});
 		}
 		var userPosition = null;
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
@@ -260,6 +302,10 @@
 		});
 		if (window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
 			userPosition = [position.coords.longitude, position.coords.latitude];
+			if (!map.__inmovFtthInitialLocationApplied && typeof map.flyTo === 'function') {
+				map.__inmovFtthInitialLocationApplied = true;
+				map.flyTo({ center: userPosition, zoom: getDetailZoom(map, position.coords.latitude), essential: true });
+			}
 		}, function () {}, { enableHighAccuracy: true, maximumAge: 300000, timeout: 8000 });
 	}
 	// Widths in pixels at zoom 14. Unknown counts remain neutral, never inferred.

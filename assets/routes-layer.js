@@ -133,6 +133,15 @@
 		return [0, ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2)];
 	}
 
+	function getDetailZoom(map, latitude) {
+		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
+		var height = container && container.clientHeight ? Math.max(240, Math.min(container.clientHeight, 900)) : 600;
+		var cos = Math.max(0.2, Math.cos((Number(latitude) || 0) * Math.PI / 180));
+		// Target approximately 100 m across the visible map height.
+		var zoom = Math.log((cos * 40075016 * height) / (512 * 100)) / Math.LN2;
+		return Math.max(16, Math.min(20, zoom));
+	}
+
 	function openSheet(map, title, rows, center) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
@@ -140,7 +149,7 @@
 		var body = sheet.querySelector('.inmov-ftth-map-sheet__body'); body.innerHTML = '';
 		rows.forEach(function (row) { if (row[1] === undefined || row[1] === null || row[1] === '') return; var div = document.createElement('div'); div.className = 'inmov-ftth-map-sheet__row'; div.innerHTML = '<b></b><span></span>'; div.querySelector('b').textContent = row[0]; div.querySelector('span').textContent = row[1]; body.appendChild(div); });
 		sheet.classList.add('is-open');
-		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), offset: getSheetOffset(map), essential: true });
+		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
 	}
 
 	function openPointSheet(map, id) {
@@ -194,6 +203,11 @@
 			if (typeof window.mapboxgl.GeolocateControl === 'function') map.addControl(new window.mapboxgl.GeolocateControl({
 				positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showUserHeading: true
 			}), 'top-right');
+			map.on('geolocate', function (event) {
+				if (event && Number.isFinite(event.longitude) && Number.isFinite(event.latitude) && typeof map.flyTo === 'function') {
+					map.flyTo({ center: [event.longitude, event.latitude], zoom: getDetailZoom(map, event.latitude), essential: true });
+				}
+			});
 		} catch (error) {}
 		var wrap = document.createElement('div');
 		wrap.className = 'inmov-ftth-point-search mapboxgl-ctrl';
@@ -228,7 +242,7 @@
 				var button = document.createElement('button'); button.type = 'button';
 				button.textContent = item.title || item.name || item.label || item.post_title || 'Ponto da rede';
 				button.addEventListener('click', function () {
-					map.flyTo({ center: point, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 16), essential: true });
+					map.flyTo({ center: point, zoom: getDetailZoom(map, point[1]), essential: true });
 					var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
 					if (markerGroup && markerGroup[0] && markerGroup[0].marker && markerGroup[0].marker.getElement) markerGroup[0].marker.getElement().click();
 					results.innerHTML = ''; input.blur();
@@ -242,7 +256,7 @@
 			if (!markerElement || typeof map.flyTo !== 'function') return;
 			var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData;
 			if (!markerGroup) return;
-			Object.keys(markerGroup).some(function (id) { var marker = markerGroup[id]?.[0]?.marker; if (marker && marker.getElement && marker.getElement() === markerElement) { var position = marker.getLngLat(); map.flyTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom(), 15), essential: true }); return true; } return false; });
+			Object.keys(markerGroup).some(function (id) { var marker = markerGroup[id]?.[0]?.marker; if (marker && marker.getElement && marker.getElement() === markerElement) { var position = marker.getLngLat(); map.flyTo({ center: [position.lng, position.lat], zoom: getDetailZoom(map, position.lat), essential: true }); return true; } return false; });
 		});
 		if (window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
 			userPosition = [position.coords.longitude, position.coords.latitude];
@@ -418,7 +432,7 @@
 		};
 		record.onClick = function (event) {
 			try {
-				if (event && event.lngLat && typeof map.flyTo === 'function') map.flyTo({ center: [event.lngLat.lng, event.lngLat.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
+				if (event && event.lngLat && typeof map.flyTo === 'function') map.flyTo({ center: [event.lngLat.lng, event.lngLat.lat], zoom: getDetailZoom(map, event.lngLat.lat), essential: true });
 				var feature = event && event.features && event.features[0];
 				if (!feature) return;
 				selectRoute(record, feature);

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.5.7
+ * Version: 0.5.8
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.5.7';
+	const VERSION               = '0.5.8';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -176,9 +176,13 @@ final class Inmov_JetEngine_FTTH_Importer {
 		global $wpdb;
 		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
 		$rows = $wpdb->get_results( "SELECT _ID, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND ponto_status <> 'inativo' LIMIT 3000", ARRAY_A );
-		return rest_ensure_response( array_map( function( $row ) { return array(
+		return rest_ensure_response( array_map( function( $row ) {
+			$saved_type = (string) $row['ponto_tipo'];
+			$inferred_type = $this->detect_point_type( strtolower( remove_accents( (string) $row['ponto_nome'] . ' ' . (string) $row['ponto_observacao'] ) ) );
+			$display_type = ( 'outro' === $saved_type && 'outro' !== $inferred_type ) ? $inferred_type : $saved_type;
+			return array(
 			'id' => (int) $row['_ID'], 'code' => (string) $row['ponto_codigo'], 'name' => (string) $row['ponto_nome'],
-			'type' => (string) $row['ponto_tipo'], 'locality' => (string) $row['ponto_localidade'], 'address' => (string) $row['ponto_endereco'],
+			'type' => $display_type, 'locality' => (string) $row['ponto_localidade'], 'address' => (string) $row['ponto_endereco'],
 			'lat' => (float) $row['ponto_latitude'], 'lng' => (float) $row['ponto_longitude'], 'status' => (string) $row['ponto_status'],
 			'capacity' => (int) $row['ponto_capacidade_portas'], 'observation' => (string) $row['ponto_observacao'],
 		); }, $rows ) );
@@ -586,12 +590,17 @@ final class Inmov_JetEngine_FTTH_Importer {
 	}
 
 	private function detect_point_type( $text ) {
-		if ( preg_match( '/\b(pop|olt)\b/', $text ) ) {
+		$text = strtolower( remove_accents( (string) $text ) );
+		if ( preg_match( '/\b(olt)\b/', $text ) ) return 'olt';
+		if ( preg_match( '/\b(pop)\b/', $text ) ) {
 			return ( false !== strpos( $text, 'olt' ) ) ? 'olt' : 'pop';
 		}
-		if ( preg_match( '/\bcto\b/', $text ) ) return 'cto';
+		// CTOs and CTs are frequently exported with engineering codes such as
+		// "CT 05.01.02" or "CT.01.01.01" instead of the full CTO label.
+		if ( preg_match( '/\bcto\b|\bct(?:\s*[.\/_-]?\s*\d[\d.\/_-]*)?\b/', $text ) ) return 'cto';
+		// CEO PON and optical splice-box nomenclature identify a caixa de emenda.
+		if ( preg_match( '/\bceo\b|\bcaixa\s+(?:optica|de\s+emenda)|\b(?:cx|caixa)\s+(?:optica\s+)?(?:de\s+)?emenda\b/', $text ) ) return 'caixa_emenda';
 		if ( preg_match( '/\bposte(s)?\b/', $text ) ) return 'poste';
-		if ( preg_match( '/\b(caixa de emenda|cx emenda|caixa emenda)\b/', $text ) ) return 'caixa_emenda';
 		if ( preg_match( '/\bsplitter\b/', $text ) ) return 'splitter';
 		return 'outro';
 	}

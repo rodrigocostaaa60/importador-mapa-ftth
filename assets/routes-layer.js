@@ -23,7 +23,9 @@
 	var selectedRouteRecord = null;
 	var selectedRouteId = null;
 	var defaultMapStyle = 'mapbox://styles/mapbox/outdoors-v12';
-	var alternateMapStyle = 'mapbox://styles/mapbox/streets-v12';
+	// streets-v12 is a standard street style; satellite-streets-v12 is the
+	// Mapbox style that actually provides satellite imagery.
+	var alternateMapStyle = 'mapbox://styles/mapbox/satellite-streets-v12';
 
 	var pointVisuals = {
 		pop: { label: 'POP', glyph: '▣', color: '#7c3aed' },

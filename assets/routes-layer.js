@@ -6,6 +6,7 @@
 
 	var sourceId = 'inmov-ftth-routes-source';
 	var layerId = 'inmov-ftth-routes-line';
+	var highlightLayerId = 'inmov-ftth-routes-highlight';
 	var routeData = null;
 	var requestPromise = null;
 	var requestRetryTimer = null;
@@ -18,6 +19,104 @@
 	var controlsAdded = new WeakSet();
 	var pointClickHandlers = new WeakSet();
 	var pointRecords = {};
+	var selectedPointElement = null;
+	var selectedRouteRecord = null;
+	var selectedRouteId = null;
+
+	var pointVisuals = {
+		pop: { label: 'POP', glyph: '▣', color: '#7c3aed' },
+		olt: { label: 'OLT', glyph: '◉', color: '#2563eb' },
+		cto: { label: 'CTO', glyph: '▦', color: '#f59e0b' },
+		poste: { label: 'Poste', glyph: '│', color: '#64748b' },
+		caixa_emenda: { label: 'Caixa de emenda', glyph: '✣', color: '#06b6d4' },
+		splitter: { label: 'Splitter', glyph: '◇', color: '#10b981' },
+		outro: { label: 'Outro', glyph: '•', color: '#475569' }
+	};
+
+	function normalizePointType(value) {
+		var raw = String(value || '').toLowerCase().trim();
+		if (raw.normalize) raw = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+		raw = raw.replace(/[\s-]+/g, '_');
+		if (raw === 'caixa_de_emenda' || raw === 'caixa_emenda') return 'caixa_emenda';
+		return pointVisuals[raw] ? raw : 'outro';
+	}
+
+	function pointVisual(point) {
+		var key = normalizePointType(point && (point.type || point.ponto_tipo || point.pointType));
+		return { key: key, data: pointVisuals[key] || pointVisuals.outro };
+	}
+
+	function clearPointSelection() {
+		if (selectedPointElement && selectedPointElement.classList) selectedPointElement.classList.remove('inmov-ftth-point-marker--selected');
+		selectedPointElement = null;
+	}
+
+	function selectPointMarker(marker) {
+		clearPointSelection();
+		if (!marker || !marker.getElement) return;
+		selectedPointElement = marker.getElement();
+		if (selectedPointElement && selectedPointElement.classList) selectedPointElement.classList.add('inmov-ftth-point-marker--selected');
+	}
+
+	function decoratePointMarker(marker, point) {
+		if (!marker || !marker.getElement) return;
+		var element = marker.getElement();
+		if (!element || !element.classList) return;
+		var visual = pointVisual(point || {});
+		element.classList.add('inmov-ftth-point-marker', 'inmov-ftth-point-marker--' + visual.key);
+		element.style.setProperty('--inmov-point-color', visual.data.color);
+		element.setAttribute('data-point-type', visual.key);
+		element.setAttribute('aria-label', (point && (point.name || point.code)) || visual.data.label);
+		var icon = element.querySelector('.jet-map-marker-default');
+		if (icon) {
+			icon.setAttribute('data-glyph', visual.data.glyph);
+			icon.style.setProperty('--inmov-point-color', visual.data.color);
+		}
+		var oldLabel = element.querySelector('.inmov-ftth-point-marker__label');
+		if (oldLabel) oldLabel.remove();
+		if (visual.key === 'cto') {
+			var label = document.createElement('span');
+			label.className = 'inmov-ftth-point-marker__label';
+			label.textContent = (point && (point.name || point.code)) || 'CTO';
+			element.appendChild(label);
+		}
+	}
+
+	function decorateAllPointMarkers(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups) return;
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (marker && marker._map === map) decoratePointMarker(marker, pointRecords[id] || {});
+			});
+		});
+	}
+
+	function clearRouteSelection() {
+		if (selectedRouteRecord && selectedRouteRecord.map && typeof selectedRouteRecord.map.getLayer === 'function' && selectedRouteRecord.map.getLayer(highlightLayerId)) {
+			try { selectedRouteRecord.map.setFilter(highlightLayerId, ['==', ['id'], '__none__']); } catch (error) {}
+		}
+		selectedRouteRecord = null;
+		selectedRouteId = null;
+	}
+
+	function selectRoute(record, feature) {
+		if (!record || !record.map || !feature) return;
+		clearPointSelection();
+		clearRouteSelection();
+		var id = feature.id;
+		if (id === undefined || id === null || id === '') {
+			var props = feature.properties || {};
+			id = props.ftthRouteId || props._ID || props.id || props.code;
+		}
+		if (id === undefined || id === null || id === '') return;
+		selectedRouteRecord = record;
+		selectedRouteId = String(id);
+		try {
+			if (record.map.getLayer(highlightLayerId)) record.map.setFilter(highlightLayerId, ['==', ['id'], selectedRouteId]);
+		} catch (error) {}
+	}
 
 	function getSheetOffset(map) {
 		if (!window.matchMedia || !window.matchMedia('(max-width: 767px)').matches) return [0, 0];
@@ -47,6 +146,10 @@
 	function openPointSheet(map, id) {
 		var point = pointRecords[id];
 		if (!point) return;
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		var marker = groups && groups[id] && groups[id][0] && groups[id][0].marker;
+		clearRouteSelection();
+		selectPointMarker(marker);
 		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço', point.address], ['Capacidade', point.capacity], ['Observações', point.observation]], [point.lng, point.lat]);
 	}
 
@@ -57,9 +160,11 @@
 			(groups[id] || []).forEach(function (entry) {
 				var marker = entry && entry.marker;
 				if (!marker || marker._map !== map || !marker.getElement || pointClickHandlers.has(marker)) return;
+				decoratePointMarker(marker, pointRecords[id] || {});
 				pointClickHandlers.add(marker);
 				marker.getElement().addEventListener('click', function (event) {
 					if (event && event.stopPropagation) event.stopPropagation();
+					selectPointMarker(marker);
 					openPointSheet(map, id);
 				}, true);
 			});
@@ -99,12 +204,12 @@
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
 		var sheet = document.createElement('section'); sheet.className = 'inmov-ftth-map-sheet'; sheet.innerHTML = '<button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button><h3 class="inmov-ftth-map-sheet__title"></h3><div class="inmov-ftth-map-sheet__body"></div>'; container.parentNode.appendChild(sheet);
 		var closeButton = sheet.querySelector && sheet.querySelector('.inmov-ftth-map-sheet__close');
-		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', function () { if (sheet.classList) sheet.classList.remove('is-open'); });
+		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', function () { if (sheet.classList) sheet.classList.remove('is-open'); clearPointSelection(); clearRouteSelection(); });
 		var records = markerRecords(container);
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
-				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); render(); } }).catch(function () {});
+				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); render(); } }).catch(function () {});
 		}
 		var userPosition = null;
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
@@ -151,8 +256,12 @@
 	};
 
 	function applyFiberStyles(data) {
-		data.features.forEach(function (feature) {
+		data.features.forEach(function (feature, index) {
 			var props = feature.properties || (feature.properties = {});
+			var routeId = feature.id;
+			if (routeId === undefined || routeId === null || routeId === '') routeId = props._ID || props.id || props.code || ('route-' + index);
+			feature.id = String(routeId);
+			props.ftthRouteId = String(routeId);
 			var count = Number(props.fibers);
 			// Imported KMLs often encode the engineering label in the route name
 			// (e.g. "FIBRA 6FO"). Prefer that explicit label for visualization.
@@ -312,6 +421,7 @@
 				if (event && event.lngLat && typeof map.flyTo === 'function') map.flyTo({ center: [event.lngLat.lng, event.lngLat.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
 				var feature = event && event.features && event.features[0];
 				if (!feature) return;
+				selectRoute(record, feature);
 
 				var props = feature.properties || {};
 				openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Status', props.status]], [event.lngLat.lng, event.lngLat.lat]);
@@ -380,6 +490,24 @@
 						'line-opacity': 0.9
 					}
 				});
+			}
+			if (!map.getLayer(highlightLayerId)) {
+				map.addLayer({
+					id: highlightLayerId,
+					type: 'line',
+					source: sourceId,
+					filter: ['==', ['id'], selectedRouteId || '__none__'],
+					layout: { 'line-cap': 'round', 'line-join': 'round' },
+					paint: {
+						'line-color': '#ffffff',
+						'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 14, 7, 18, 11],
+						'line-opacity': 0.95,
+						'line-blur': 1.5
+					}
+				});
+			}
+			if (selectedRouteRecord === record && selectedRouteId && map.getLayer(highlightLayerId)) {
+				try { map.setFilter(highlightLayerId, ['==', ['id'], selectedRouteId]); } catch (error) {}
 			}
 
 			bindLayerEvents(record);

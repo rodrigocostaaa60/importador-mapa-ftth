@@ -556,6 +556,18 @@
 		} catch (error) {}
 	}
 
+	function openGoogleMapsRoute(center) {
+		if (!center || center.length !== 2) return;
+		var lng = Number(center[0]);
+		var lat = Number(center[1]);
+		if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+		var destination = encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6));
+		var url = 'https://www.google.com/maps/dir/?api=1&destination=' + destination + '&travelmode=driving&dir_action=navigate';
+		var opened = null;
+		try { opened = window.open(url, '_blank', 'noopener,noreferrer'); } catch (error) {}
+		if (!opened) window.location.href = url;
+	}
+
 	function openSheet(map, title, rows, center, options) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
@@ -610,6 +622,7 @@
 		var coordinates = center && center.length === 2 ? center[1] + ', ' + center[0] : '';
 		sheet.__inmovFtthCenter = center;
 		sheet.__inmovFtthCoordinates = coordinates;
+		sheet.__inmovFtthRouteCenter = center;
 		var coordinateButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
 		if (coordinateButton) coordinateButton.classList.add('is-hidden');
 		sheet.classList.add('is-open');
@@ -772,6 +785,7 @@
 			'<div class="inmov-ftth-map-sheet__footer">' +
 				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="center">⌾ <span>Centralizar</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action is-hidden" data-sheet-action="copy-coordinates">▣ <span>Copiar coordenadas</span></button>' +
+				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="route" aria-label="Abrir rota no Google Maps">🚗 <span>Rotas</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit" data-sheet-action="edit">✎ <span>Editar</span></button>' +
 			'</div>';
 		container.parentNode.appendChild(sheet);
@@ -791,6 +805,8 @@
 		});
 		var copyButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
 		if (copyButton && copyButton.addEventListener) copyButton.addEventListener('click', function () { copySheetValue(sheet.__inmovFtthCoordinates || ''); copyButton.classList.add('is-copied'); window.setTimeout(function () { copyButton.classList.remove('is-copied'); }, 1400); });
+		var routeButton = sheet.querySelector('[data-sheet-action="route"]');
+		if (routeButton && routeButton.addEventListener) routeButton.addEventListener('click', function () { openGoogleMapsRoute(sheet.__inmovFtthRouteCenter || []); });
 		var editButton = sheet.querySelector('[data-sheet-action="edit"]');
 		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function () {
 			var detail = { id: sheet.dataset.itemId || '', code: sheet.dataset.itemCode || '', kind: sheet.dataset.itemKind || '', type: sheet.dataset.itemType || '' };

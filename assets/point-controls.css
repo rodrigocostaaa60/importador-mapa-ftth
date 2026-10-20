@@ -23,4 +23,4 @@
 .jet-map-listing .mapboxgl-marker.inmov-ftth-map-marker--selected-container{z-index:10000!important;}
 .jet-map-listing .inmov-ftth-point-marker--cto .inmov-ftth-point-marker__label{display:block;}
 .jet-map-listing .inmov-ftth-point-marker--selected>.jet-map-marker-default{transform:translate(var(--inmov-overlap-x,0px),var(--inmov-overlap-y,0px)) scale(1.2)!important;box-shadow:0 0 0 3px #fff,0 0 0 6px var(--inmov-point-color,#2563eb),0 0 20px rgba(15,23,42,.58)!important;}
-.jet-map-listing .inmov-ftth-point-marker--selected{z-index:60!important;}
+.jet-map-listing .jet-map-marker.inmov-ftth-point-marker.inmov-ftth-point-marker--selected{z-index:10000!important;}

@@ -21,6 +21,7 @@
 	var pointClickHandlers = new WeakSet();
 	var pointRecords = {};
 	var selectedPointElement = null;
+	var selectedPointElementZIndex = '';
 	var selectedPointContainer = null;
 	var selectedPointContainerZIndex = '';
 	var selectedRouteRecord = null;
@@ -71,12 +72,16 @@
 	}
 
 	function clearPointSelection() {
-		if (selectedPointElement && selectedPointElement.classList) selectedPointElement.classList.remove('inmov-ftth-point-marker--selected');
+		if (selectedPointElement) {
+			if (selectedPointElement.classList) selectedPointElement.classList.remove('inmov-ftth-point-marker--selected');
+			if (selectedPointElement.style) selectedPointElement.style.zIndex = selectedPointElementZIndex;
+		}
 		if (selectedPointContainer) {
 			if (selectedPointContainer.classList) selectedPointContainer.classList.remove('inmov-ftth-map-marker--selected-container');
-			if (selectedPointContainer.style) selectedPointContainer.style.zIndex = selectedPointContainerZIndex;
+			if (selectedPointContainer !== selectedPointElement && selectedPointContainer.style) selectedPointContainer.style.zIndex = selectedPointContainerZIndex;
 		}
 		selectedPointElement = null;
+		selectedPointElementZIndex = '';
 		selectedPointContainer = null;
 		selectedPointContainerZIndex = '';
 	}
@@ -86,7 +91,15 @@
 		if (!marker || !marker.getElement) return;
 		selectedPointElement = marker.getElement();
 		if (selectedPointElement && selectedPointElement.classList) selectedPointElement.classList.add('inmov-ftth-point-marker--selected');
-		selectedPointContainer = selectedPointElement && selectedPointElement.parentNode ? selectedPointElement.parentNode : null;
+		selectedPointContainer = selectedPointElement;
+		if (selectedPointElement && selectedPointElement.closest) {
+			var mapboxContainer = selectedPointElement.closest('.mapboxgl-marker');
+			if (mapboxContainer) selectedPointContainer = mapboxContainer;
+		}
+		if (selectedPointElement && selectedPointElement.style) {
+			selectedPointElementZIndex = selectedPointElement.style.zIndex || '';
+			selectedPointElement.style.zIndex = '10000';
+		}
 		if (selectedPointContainer) {
 			selectedPointContainerZIndex = selectedPointContainer.style ? selectedPointContainer.style.zIndex || '' : '';
 			if (selectedPointContainer.classList) selectedPointContainer.classList.add('inmov-ftth-map-marker--selected-container');

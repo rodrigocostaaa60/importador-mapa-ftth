@@ -49,6 +49,20 @@
 		return pointVisuals[raw] ? raw : 'outro';
 	}
 
+	function localityClusterInfo(value) {
+		var raw = String(value || '').trim().replace(/\s+/g, ' ');
+		if (!raw) return { key: '__unknown__', label: 'Sem localidade' };
+		// Imports frequently append the state to the city ("Jaguaquara - BA").
+		// Keep the city only so records from the same place are counted together.
+		raw = raw.replace(/\s*(?:[-–—,\/]\s*|\s+)(?:ba|bahia)\s*$/i, '').trim();
+		var words = raw.split(/\s+/).filter(Boolean);
+		var label = words.length > 2 ? words.slice(0, 2).join(' ') : raw;
+		var key = raw.toLowerCase();
+		if (key.normalize) key = key.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+		key = key.replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ') || '__unknown__';
+		return { key: key, label: label };
+	}
+
 	function pointVisual(point) {
 		var key = normalizePointType(point && (point.type || point.ponto_tipo || point.pointType));
 		return { key: key, data: pointVisuals[key] || pointVisuals.outro };
@@ -184,13 +198,10 @@
 					cluster = clusters[0];
 				} else {
 					var point = pointRecords[item.id] || {};
-					var locality = String(point.locality || point.cidade || point.city || point.municipio || '').trim();
-					var localityKey = locality.toLowerCase();
-					if (locality.normalize) localityKey = localityKey.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-					localityKey = localityKey.replace(/\s+/g, ' ') || '__unknown__';
-					cluster = clusters.find(function (candidate) { return candidate.key === 'city:' + localityKey; });
+					var localityInfo = localityClusterInfo(point.locality || point.cidade || point.city || point.municipio);
+					cluster = clusters.find(function (candidate) { return candidate.key === 'city:' + localityInfo.key; });
 					if (!cluster) {
-						cluster = { key: 'city:' + localityKey, label: locality || 'Sem localidade', items: [] };
+						cluster = { key: 'city:' + localityInfo.key, label: localityInfo.label, items: [] };
 						clusters.push(cluster);
 					}
 				}

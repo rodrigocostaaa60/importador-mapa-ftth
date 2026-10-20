@@ -6,6 +6,7 @@
 
 	var sourceId = 'inmov-ftth-routes-source';
 	var layerId = 'inmov-ftth-routes-line';
+	var hitLayerId = 'inmov-ftth-routes-hit';
 	var highlightLayerId = 'inmov-ftth-routes-highlight';
 	var routeData = null;
 	var requestPromise = null;
@@ -566,9 +567,10 @@
 		if (!record.layerEventsBound || !map || typeof map.off !== 'function') return;
 
 		try {
-			map.off('mouseenter', layerId, record.onMouseEnter);
-			map.off('mouseleave', layerId, record.onMouseLeave);
-			map.off('click', layerId, record.onClick);
+			var eventLayer = record.eventLayerId || layerId;
+			map.off('mouseenter', eventLayer, record.onMouseEnter);
+			map.off('mouseleave', eventLayer, record.onMouseLeave);
+			map.off('click', eventLayer, record.onClick);
 		} catch (error) {
 			// A style change can remove the layer before these handlers are detached.
 		}
@@ -648,9 +650,10 @@
 			}
 		};
 
-		map.on('mouseenter', layerId, record.onMouseEnter);
-		map.on('mouseleave', layerId, record.onMouseLeave);
-		map.on('click', layerId, record.onClick);
+		record.eventLayerId = map.getLayer(hitLayerId) ? hitLayerId : layerId;
+		map.on('mouseenter', record.eventLayerId, record.onMouseEnter);
+		map.on('mouseleave', record.eventLayerId, record.onMouseLeave);
+		map.on('click', record.eventLayerId, record.onClick);
 		record.layerEventsBound = true;
 	}
 
@@ -684,6 +687,22 @@
 					}
 				});
 			}
+			if (!map.getLayer(hitLayerId)) {
+				map.addLayer({
+					id: hitLayerId,
+					type: 'line',
+					source: sourceId,
+					layout: { 'line-cap': 'round', 'line-join': 'round' },
+					paint: {
+						'line-color': '#ffffff',
+						'line-width': ['interpolate', ['linear'], ['zoom'],
+							8, ['+', ['get', 'ftthWidth'], 10],
+							14, ['+', ['get', 'ftthWidth'], 12],
+							18, ['+', ['get', 'ftthWidth'], 16]],
+						'line-opacity': 0.001
+					}
+				});
+			}
 			if (!map.getLayer(highlightLayerId)) {
 				map.addLayer({
 					id: highlightLayerId,
@@ -693,9 +712,9 @@
 					layout: { 'line-cap': 'round', 'line-join': 'round' },
 					paint: {
 						'line-color': '#ffffff',
-						'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 14, 7, 18, 11],
-						'line-opacity': 0.95,
-						'line-blur': 1.5
+						'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 14, 12, 18, 18],
+						'line-opacity': 1,
+						'line-blur': 1.8
 					}
 				});
 			}

@@ -125,6 +125,42 @@
 				if (element && element.classList) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
 			});
 		});
+		applyOverlapOffsets(map);
+	}
+
+	function applyOverlapOffsets(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups || !map || typeof map.project !== 'function') return;
+		var visible = [];
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+				var element = marker.getElement();
+				if (!element || element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
+				try { var point = map.project(marker.getLngLat()); visible.push({ element: element, point: point }); } catch (error) {}
+			});
+		});
+		var buckets = {};
+		visible.forEach(function (item) {
+			var key = Math.floor(item.point.x / 36) + ':' + Math.floor(item.point.y / 36);
+			if (!buckets[key]) buckets[key] = [];
+			buckets[key].push(item);
+		});
+		Object.keys(buckets).forEach(function (key) {
+			var cluster = buckets[key];
+			cluster.forEach(function (item) {
+				item.element.style.setProperty('--inmov-overlap-x', '0px');
+				item.element.style.setProperty('--inmov-overlap-y', '0px');
+			});
+			if (cluster.length < 2) return;
+			var radius = Math.min(42, 24 + (cluster.length * 2));
+			cluster.forEach(function (item, index) {
+				var angle = (-Math.PI / 2) + ((Math.PI * 2 * index) / cluster.length);
+				item.element.style.setProperty('--inmov-overlap-x', Math.round(Math.cos(angle) * radius) + 'px');
+				item.element.style.setProperty('--inmov-overlap-y', Math.round(Math.sin(angle) * radius) + 'px');
+			});
+		});
 	}
 
 	function clearRouteSelection() {

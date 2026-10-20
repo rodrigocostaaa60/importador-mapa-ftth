@@ -21,6 +21,8 @@
 	var pointClickHandlers = new WeakSet();
 	var pointRecords = {};
 	var selectedPointElement = null;
+	var selectedPointContainer = null;
+	var selectedPointContainerZIndex = '';
 	var selectedRouteRecord = null;
 	var selectedRouteId = null;
 	var defaultMapStyle = 'mapbox://styles/mapbox/outdoors-v12';
@@ -70,7 +72,13 @@
 
 	function clearPointSelection() {
 		if (selectedPointElement && selectedPointElement.classList) selectedPointElement.classList.remove('inmov-ftth-point-marker--selected');
+		if (selectedPointContainer) {
+			if (selectedPointContainer.classList) selectedPointContainer.classList.remove('inmov-ftth-map-marker--selected-container');
+			if (selectedPointContainer.style) selectedPointContainer.style.zIndex = selectedPointContainerZIndex;
+		}
 		selectedPointElement = null;
+		selectedPointContainer = null;
+		selectedPointContainerZIndex = '';
 	}
 
 	function selectPointMarker(marker) {
@@ -78,6 +86,12 @@
 		if (!marker || !marker.getElement) return;
 		selectedPointElement = marker.getElement();
 		if (selectedPointElement && selectedPointElement.classList) selectedPointElement.classList.add('inmov-ftth-point-marker--selected');
+		selectedPointContainer = selectedPointElement && selectedPointElement.parentNode ? selectedPointElement.parentNode : null;
+		if (selectedPointContainer) {
+			selectedPointContainerZIndex = selectedPointContainer.style ? selectedPointContainer.style.zIndex || '' : '';
+			if (selectedPointContainer.classList) selectedPointContainer.classList.add('inmov-ftth-map-marker--selected-container');
+			if (selectedPointContainer.style) selectedPointContainer.style.zIndex = '10000';
+		}
 	}
 
 	function decoratePointMarker(marker, point) {

@@ -368,7 +368,16 @@
 		if (state.points) pending.push('pontos');
 		var text = overlay.querySelector ? overlay.querySelector('.inmov-ftth-page-loading__text') : null;
 		if (text) text.textContent = state.error || (pending.length ? 'Carregando ' + pending.join(' e ') + '…' : 'Tudo pronto');
-		if (overlay.classList) overlay.classList.toggle('is-hidden', !pending.length && !state.error);
+		var hidden = !pending.length && !state.error;
+		if (overlay.classList) overlay.classList.toggle('is-hidden', hidden);
+		/* The bootstrap uses inline styles so it appears before CSS loads. Keep
+		 * the close state inline as well; otherwise inline visibility would win
+		 * over the .is-hidden stylesheet rule. */
+		if (overlay.style) {
+			overlay.style.opacity = hidden ? '0' : '1';
+			overlay.style.visibility = hidden ? 'hidden' : 'visible';
+			overlay.style.pointerEvents = hidden ? 'none' : 'auto';
+		}
 	}
 
 	function updateMapLoading(container, map, patch) {

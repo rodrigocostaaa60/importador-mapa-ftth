@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.5
+ * Version: 0.10.6
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.5';
+	const VERSION               = '0.10.6';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -351,7 +351,12 @@ final class Inmov_JetEngine_FTTH_Importer {
 				document.documentElement.appendChild(style);
 				document.documentElement.appendChild(overlay);
 				window.setTimeout(function () {
-					if (overlay && overlay.classList && !overlay.classList.contains('is-hidden')) overlay.classList.add('is-hidden');
+					if (overlay && overlay.classList && !overlay.classList.contains('is-hidden')) {
+						overlay.classList.add('is-hidden');
+						overlay.style.opacity = '0';
+						overlay.style.visibility = 'hidden';
+						overlay.style.pointerEvents = 'none';
+					}
 				}, 20000);
 			}
 			ensurePageLoading();
@@ -361,6 +366,14 @@ final class Inmov_JetEngine_FTTH_Importer {
 				if (root && root.querySelectorAll) Array.prototype.forEach.call(root.querySelectorAll(selector), function (node) { nodes.push(node); });
 				nodes.forEach(function (container) {
 					var host = container.parentNode || container;
+					var pageOverlay = document.getElementById('inmov-ftth-page-loading');
+					if (pageOverlay && host && pageOverlay.parentNode !== host && host.appendChild) {
+						host.appendChild(pageOverlay);
+						pageOverlay.style.position = 'absolute';
+						pageOverlay.style.inset = '0';
+						pageOverlay.style.zIndex = '9000';
+						pageOverlay.style.borderRadius = 'inherit';
+					}
 					if (!host || !host.appendChild || (host.querySelector && host.querySelector('.inmov-ftth-map-loading'))) return;
 					if (host.classList) host.classList.add('inmov-ftth-map-shell');
 					var overlay = document.createElement('div');

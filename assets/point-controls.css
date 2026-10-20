@@ -111,3 +111,104 @@
 .inmov-ftth-map-shell .jet-map-listing .jet-map-marker.inmov-ftth-point-marker.inmov-ftth-point-marker--selected{
  z-index:1000!important;
 }
+
+/* Pesquisa e controles com o mesmo acabamento visual do painel de detalhes. */
+.inmov-ftth-map-shell .inmov-ftth-point-search{
+ left:16px;
+ top:16px;
+ width:min(420px,calc(100% - 32px));
+ max-width:none;
+ padding:7px;
+ border:1px solid #e5eaf2;
+ border-radius:18px;
+ background:rgba(255,255,255,.96);
+ box-shadow:0 10px 28px rgba(15,23,42,.16),0 2px 7px rgba(15,23,42,.08);
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search input{
+ box-sizing:border-box;
+ min-height:42px;
+ padding:10px 13px;
+ border:1px solid transparent;
+ border-radius:12px;
+ color:#172033;
+ background:#f8fafc;
+ font:500 14px/1.2 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+ transition:background .16s ease,border-color .16s ease,box-shadow .16s ease;
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search input:focus{
+ border-color:#b9d1ed;
+ background:#fff;
+ box-shadow:0 0 0 3px rgba(37,99,235,.10);
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search input::placeholder{color:#7890aa}
+.inmov-ftth-map-shell .inmov-ftth-point-search__results{
+ margin-top:6px;
+ overflow:hidden;
+ border:1px solid #e5eaf2;
+ border-radius:12px;
+ background:#fff;
+ box-shadow:0 8px 20px rgba(15,23,42,.10);
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search__results button{
+ padding:10px 12px;
+ color:#172033;
+ background:#fff;
+ font:600 13px/1.25 Inter,ui-sans-serif,system-ui,sans-serif;
+ transition:background .16s ease,color .16s ease;
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search__results button:hover,
+.inmov-ftth-map-shell .inmov-ftth-point-search__results button:focus-visible{color:#0057b8;background:#f3f7fc;outline:0}
+.inmov-ftth-map-shell .mapboxgl-ctrl-top-right{
+ top:16px;
+ right:16px;
+}
+.inmov-ftth-map-shell .mapboxgl-ctrl-group{
+ display:flex;
+ flex-direction:column;
+ gap:8px;
+ border:0;
+ border-radius:0;
+ background:transparent;
+ box-shadow:none;
+}
+.inmov-ftth-map-shell .mapboxgl-ctrl-group button,
+.inmov-ftth-map-shell .inmov-ftth-globe-control__button{
+ display:grid;
+ place-items:center;
+ width:44px;
+ height:44px;
+ padding:0;
+ border:1px solid #e5eaf2;
+ border-radius:14px;
+ background:rgba(255,255,255,.96);
+ color:#1e293b;
+ box-shadow:0 8px 20px rgba(15,23,42,.14),0 1px 4px rgba(15,23,42,.08);
+ transition:transform .16s ease,background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease;
+}
+.inmov-ftth-map-shell .mapboxgl-ctrl-group button:hover,
+.inmov-ftth-map-shell .mapboxgl-ctrl-group button:focus-visible,
+.inmov-ftth-map-shell .inmov-ftth-globe-control__button:hover,
+.inmov-ftth-map-shell .inmov-ftth-globe-control__button:focus-visible{
+ z-index:1;
+ transform:translateY(-1px);
+ border-color:#b9d1ed;
+ background:#f8fbff;
+ color:#0057b8;
+ outline:0;
+ box-shadow:0 10px 22px rgba(15,23,42,.18),0 0 0 3px rgba(37,99,235,.08);
+}
+.inmov-ftth-map-shell .inmov-ftth-globe-control__button.is-active{
+ border-color:#2563eb;
+ background:#2563eb;
+ color:#fff;
+}
+.inmov-ftth-map-shell .mapboxgl-ctrl-icon{opacity:.82;transition:opacity .16s ease}
+.inmov-ftth-map-shell .mapboxgl-ctrl-group button:hover .mapboxgl-ctrl-icon,
+.inmov-ftth-map-shell .mapboxgl-ctrl-group button:focus-visible .mapboxgl-ctrl-icon{opacity:1}
+@media(max-width:767px){
+ .inmov-ftth-map-shell .inmov-ftth-point-search{left:10px;top:10px;width:calc(100% - 20px)}
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right{top:10px;right:10px}
+ .inmov-ftth-map-shell .mapboxgl-ctrl-group{gap:7px}
+ .inmov-ftth-map-shell .mapboxgl-ctrl-group button,
+ .inmov-ftth-map-shell .inmov-ftth-globe-control__button{width:42px;height:42px;border-radius:13px}
+}

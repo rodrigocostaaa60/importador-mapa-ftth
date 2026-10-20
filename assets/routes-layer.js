@@ -116,7 +116,7 @@
 		updateMarkerVisibility(map);
 	}
 
-	function updateMarkerVisibility(map) {
+	function updateMarkerVisibility(map, options) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		if (!groups || !map || typeof map.getBounds !== 'function') return;
 		var bounds;
@@ -140,18 +140,29 @@
 				if (element && element.classList) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
 			});
 		});
-		applyOverlapOffsets(map);
-		updatePointClusters(map);
+		if (!options || !options.lightweight) applyOverlapOffsets(map);
+		if (!options || !options.lightweight || options.refreshClusters) updatePointClusters(map);
 	}
 
 	function scheduleMarkerVisibility(map) {
 		if (!map || map.__inmovMarkerVisibilityPending) return;
 		map.__inmovMarkerVisibilityPending = true;
+		var isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+		var interval = isMobile ? 110 : 55;
+		var clusterInterval = isMobile ? 300 : 140;
+		var now = Date.now();
+		var elapsed = now - (map.__inmovMarkerVisibilityLast || 0);
+		var wait = Math.max(0, interval - elapsed);
 		var refresh = function () {
 			map.__inmovMarkerVisibilityPending = false;
-			updateMarkerVisibility(map);
+			var timestamp = Date.now();
+			var refreshClusters = timestamp - (map.__inmovMarkerClusterLast || 0) >= clusterInterval;
+			map.__inmovMarkerVisibilityLast = timestamp;
+			if (refreshClusters) map.__inmovMarkerClusterLast = timestamp;
+			updateMarkerVisibility(map, { lightweight: true, refreshClusters: refreshClusters });
 		};
-		if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(refresh);
+		if (wait > 0) window.setTimeout(refresh, wait);
+		else if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(refresh);
 		else window.setTimeout(refresh, 60);
 	}
 

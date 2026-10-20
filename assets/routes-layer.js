@@ -295,6 +295,94 @@
 		return Math.max(16, Math.min(20, zoom));
 	}
 
+	function orientationHeading(event) {
+		if (!event) return null;
+		var iosHeading = Number(event.webkitCompassHeading);
+		if (Number.isFinite(iosHeading)) return (iosHeading + 360) % 360;
+		var alpha = Number(event.alpha);
+		if (!Number.isFinite(alpha)) return null;
+		var screenAngle = 0;
+		try {
+			if (window.screen && window.screen.orientation && Number.isFinite(Number(window.screen.orientation.angle))) screenAngle = Number(window.screen.orientation.angle);
+			else if (Number.isFinite(Number(window.orientation))) screenAngle = Number(window.orientation);
+		} catch (error) {}
+		// DeviceOrientation alpha grows counter-clockwise from the device's
+		// top edge. Invert it to obtain a compass heading and compensate for
+		// portrait/landscape screen rotation when the browser exposes it.
+		return (360 - alpha + screenAngle + 360) % 360;
+	}
+
+	function attachDeviceOrientation(map) {
+		if (!map || map.__inmovFtthOrientationAttached || !window.addEventListener) return;
+		map.__inmovFtthOrientationAttached = true;
+		var lastHeading = null;
+		var handler = function (event) {
+			if (!map.__inmovFtthOrientationEnabled || typeof map.rotateTo !== 'function') return;
+			var heading = orientationHeading(event);
+			if (!Number.isFinite(heading)) return;
+			if (lastHeading === null) lastHeading = heading;
+			var delta = ((heading - lastHeading + 540) % 360) - 180;
+			lastHeading = (lastHeading + delta * 0.22 + 360) % 360;
+			try { map.rotateTo(lastHeading, { duration: 0 }); } catch (error) {}
+		};
+		window.addEventListener('deviceorientationabsolute', handler, true);
+		window.addEventListener('deviceorientation', handler, true);
+		map.__inmovFtthOrientationHandler = handler;
+	}
+
+	function requestDeviceOrientationPermission(map) {
+		var Orientation = window.DeviceOrientationEvent;
+		if (!Orientation || typeof Orientation.requestPermission !== 'function') {
+			attachDeviceOrientation(map);
+			return;
+		}
+		if (map.__inmovFtthOrientationPermissionRequested) return;
+		map.__inmovFtthOrientationPermissionRequested = true;
+		try {
+			var result = Orientation.requestPermission();
+			if (result && typeof result.then === 'function') result.then(function (state) {
+				if (state === 'granted') attachDeviceOrientation(map);
+			}).catch(function () {});
+		} catch (error) {}
+	}
+
+	function enableDeviceOrientation(map) {
+		if (!map) return;
+		map.__inmovFtthOrientationEnabled = true;
+		if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission === 'function') {
+			// iOS requires a user gesture. The geolocation button is already a
+			// deliberate gesture, so use it to request the orientation permission.
+			var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
+			if (container && !container.__inmovFtthOrientationClickBound && container.addEventListener) {
+				container.__inmovFtthOrientationClickBound = true;
+				container.addEventListener('click', function (event) {
+					var target = event && event.target && event.target.closest ? event.target.closest('.mapboxgl-ctrl-geolocate') : null;
+					if (target) requestDeviceOrientationPermission(map);
+				}, true);
+			}
+			return;
+		}
+		attachDeviceOrientation(map);
+	}
+
+	function startNativeGeolocation(map, control) {
+		if (!map || !control || map.__inmovFtthAutoLocationStarted) return;
+		map.__inmovFtthAutoLocationStarted = true;
+		var trigger = function () {
+			try {
+				if (typeof control.trigger === 'function') control.trigger();
+				else {
+					var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
+					var button = container && container.querySelector ? container.querySelector('.mapboxgl-ctrl-geolocate') : null;
+					if (button && typeof button.click === 'function') button.click();
+				}
+			} catch (error) {}
+		};
+		if (typeof map.loaded === 'function' && map.loaded()) trigger();
+		else if (typeof map.once === 'function') map.once('load', trigger);
+		else window.setTimeout(trigger, 350);
+	}
+
 	function openSheet(map, title, rows, center) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
@@ -351,6 +439,7 @@
 	function addMapControls(container, map) {
 		if (controlsAdded.has(container) || !window.mapboxgl) return;
 		controlsAdded.add(container);
+		var nativeLocationControl = false;
 		try {
 			if (typeof window.mapboxgl.NavigationControl === 'function') map.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
 			var globeControl = {
@@ -380,18 +469,32 @@
 				}
 			};
 			if (typeof window.mapboxgl.Control === 'function' || globeControl.onAdd) map.addControl(globeControl, 'top-right');
-			if (typeof window.mapboxgl.GeolocateControl === 'function') map.addControl(new window.mapboxgl.GeolocateControl({
-				positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showUserHeading: true
-			}), 'top-right');
+			if (typeof window.mapboxgl.GeolocateControl === 'function') {
+				var geolocateControl = new window.mapboxgl.GeolocateControl({
+					positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true
+				});
+				map.addControl(geolocateControl, 'top-right');
+				nativeLocationControl = true;
+				map.__inmovFtthGeolocateControl = geolocateControl;
+			}
 			map.on('geolocate', function (event) {
 				if (event && Number.isFinite(event.longitude) && Number.isFinite(event.latitude) && typeof map.flyTo === 'function') {
-					map.flyTo({ center: [event.longitude, event.latitude], zoom: getDetailZoom(map, event.latitude), essential: true });
+					userPosition = [event.longitude, event.latitude];
+					enableDeviceOrientation(map);
+					if (!map.__inmovFtthFirstGeolocateHandled) {
+						map.__inmovFtthFirstGeolocateHandled = true;
+						map.flyTo({ center: [event.longitude, event.latitude], zoom: getDetailZoom(map, event.latitude), essential: true });
+					}
 				}
 			});
+			map.on('trackuserlocationstart', function () { enableDeviceOrientation(map); });
+			map.on('trackuserlocationend', function () { map.__inmovFtthOrientationEnabled = false; });
+			map.on('dragstart', function () { map.__inmovFtthOrientationEnabled = false; });
 			map.on('moveend', function () { updateMarkerVisibility(map); });
 			map.on('move', function () { scheduleMarkerVisibility(map); });
 			map.on('zoomend', function () { updateMarkerVisibility(map); });
 			map.on('resize', function () { updateMarkerVisibility(map); });
+			if (nativeLocationControl && map.__inmovFtthGeolocateControl) startNativeGeolocation(map, map.__inmovFtthGeolocateControl);
 		} catch (error) {}
 		var wrap = document.createElement('div');
 		wrap.className = 'inmov-ftth-point-search mapboxgl-ctrl';
@@ -446,7 +549,7 @@
 			if (!markerGroup) return;
 			Object.keys(markerGroup).some(function (id) { var marker = markerGroup[id]?.[0]?.marker; if (marker && marker.getElement && marker.getElement() === markerElement) { var position = marker.getLngLat(); map.flyTo({ center: [position.lng, position.lat], zoom: getDetailZoom(map, position.lat), essential: true }); return true; } return false; });
 		});
-		if (window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
+		if (!nativeLocationControl && window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
 			userPosition = [position.coords.longitude, position.coords.latitude];
 			if (!map.__inmovFtthInitialLocationApplied && typeof map.flyTo === 'function') {
 				map.__inmovFtthInitialLocationApplied = true;

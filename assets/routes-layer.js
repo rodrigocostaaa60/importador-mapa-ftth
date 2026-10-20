@@ -130,6 +130,17 @@
 		updatePointClusters(map);
 	}
 
+	function scheduleMarkerVisibility(map) {
+		if (!map || map.__inmovMarkerVisibilityPending) return;
+		map.__inmovMarkerVisibilityPending = true;
+		var refresh = function () {
+			map.__inmovMarkerVisibilityPending = false;
+			updateMarkerVisibility(map);
+		};
+		if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(refresh);
+		else window.setTimeout(refresh, 60);
+	}
+
 	function updatePointClusters(map) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		if (!groups || !map || typeof map.getZoom !== 'function' || typeof map.project !== 'function') return;
@@ -378,6 +389,7 @@
 				}
 			});
 			map.on('moveend', function () { updateMarkerVisibility(map); });
+			map.on('move', function () { scheduleMarkerVisibility(map); });
 			map.on('zoomend', function () { updateMarkerVisibility(map); });
 			map.on('resize', function () { updateMarkerVisibility(map); });
 		} catch (error) {}

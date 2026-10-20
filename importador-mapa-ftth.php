@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.4
+ * Version: 0.10.5
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.4';
+	const VERSION               = '0.10.5';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -335,6 +335,26 @@ final class Inmov_JetEngine_FTTH_Importer {
 		(function () {
 			'use strict';
 			var selector = '.jet-map-listing.mapbox-provider';
+			/* This overlay is created while the document is still being parsed, so
+			 * the user sees an honest loading state before Elementor/JetEngine and
+			 * Mapbox start painting their layers. */
+			function ensurePageLoading() {
+				if (!document.documentElement || document.getElementById('inmov-ftth-page-loading')) return;
+				var overlay = document.createElement('div');
+				overlay.id = 'inmov-ftth-page-loading';
+				overlay.setAttribute('role', 'status');
+				overlay.setAttribute('aria-live', 'polite');
+				overlay.innerHTML = '<span class="inmov-ftth-page-loading__spinner" aria-hidden="true"></span><strong>Carregando mapa</strong><span class="inmov-ftth-page-loading__text">Preparando rotas e pontos…</span>';
+				overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#f8fafc;color:#0f172a;font:600 15px/1.35 Inter,system-ui,sans-serif;opacity:1;visibility:visible;transition:opacity .24s ease,visibility .24s ease;';
+				var style = document.createElement('style');
+				style.textContent = '#inmov-ftth-page-loading strong{font-size:18px}#inmov-ftth-page-loading .inmov-ftth-page-loading__text{color:#64748b;font-size:13px;font-weight:500}#inmov-ftth-page-loading .inmov-ftth-page-loading__spinner{width:28px;height:28px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;animation:inmov-ftth-page-loading-spin .72s linear infinite}@keyframes inmov-ftth-page-loading-spin{to{transform:rotate(360deg)}}#inmov-ftth-page-loading.is-hidden{opacity:0;visibility:hidden;pointer-events:none}';
+				document.documentElement.appendChild(style);
+				document.documentElement.appendChild(overlay);
+				window.setTimeout(function () {
+					if (overlay && overlay.classList && !overlay.classList.contains('is-hidden')) overlay.classList.add('is-hidden');
+				}, 20000);
+			}
+			ensurePageLoading();
 			function mount(root) {
 				var nodes = [];
 				if (root && root.matches && root.matches(selector)) nodes.push(root);

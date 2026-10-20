@@ -359,6 +359,18 @@
 		return Math.max(16, Math.min(20, zoom));
 	}
 
+	function updatePageLoading(state) {
+		var overlay = document.getElementById && document.getElementById('inmov-ftth-page-loading');
+		if (!overlay || !state) return;
+		var pending = [];
+		if (state.map) pending.push('mapa');
+		if (state.routes) pending.push('rotas');
+		if (state.points) pending.push('pontos');
+		var text = overlay.querySelector ? overlay.querySelector('.inmov-ftth-page-loading__text') : null;
+		if (text) text.textContent = state.error || (pending.length ? 'Carregando ' + pending.join(' e ') + '…' : 'Tudo pronto');
+		if (overlay.classList) overlay.classList.toggle('is-hidden', !pending.length && !state.error);
+	}
+
 	function updateMapLoading(container, map, patch) {
 		if (!container || !map) return;
 		var state = map.__inmovFtthLoadingState || {
@@ -369,6 +381,7 @@
 		};
 		Object.keys(patch || {}).forEach(function (key) { state[key] = patch[key]; });
 		map.__inmovFtthLoadingState = state;
+		updatePageLoading(state);
 		var host = container.parentNode || container;
 		if (!map.__inmovFtthLoadingOverlay && host && host.querySelector) map.__inmovFtthLoadingOverlay = host.querySelector('.inmov-ftth-map-loading');
 		if (!map.__inmovFtthLoadingOverlay && host && host.appendChild && document.createElement) {
@@ -639,6 +652,8 @@
 		var coordinateButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
 		if (coordinateButton) coordinateButton.classList.add('is-hidden');
 		sheet.classList.add('is-open');
+		var sheetShell = sheet.closest && sheet.closest('.inmov-ftth-map-shell');
+		if (sheetShell && sheetShell.classList) sheetShell.classList.add('inmov-ftth-map-shell--sheet-open');
 		sheet.setAttribute('aria-hidden', 'false');
 		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
 	}
@@ -726,6 +741,133 @@
 		parent.insertBefore(legend, container);
 	}
 
+	function mapShellFor(container) {
+		var host = container && container.parentNode;
+		return host && host.classList && host.classList.contains('inmov-ftth-map-shell') ? host : host;
+	}
+
+	function setRouteLayerVisibility(map, visible) {
+		if (!map || typeof map.setLayoutProperty !== 'function') return;
+		[layerId, hitLayerId, highlightLayerId].forEach(function (id) {
+			try { if (map.getLayer && map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); } catch (error) {}
+		});
+	}
+
+	function applyMapQuickFilter(container, map, key) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups) return;
+		var pointFilter = key === 'rotas' ? null : (key === 'pontos' || key === 'tudo' ? null : normalizePointType(key));
+		var routesVisible = key === 'tudo' || key === 'rotas';
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || !marker.getElement) return;
+				var element = marker.getElement();
+				if (!element || !element.classList) return;
+				var type = normalizePointType((pointRecords[id] || {}).type);
+				var filtered = key === 'rotas' || (pointFilter && type !== pointFilter);
+				element.classList.toggle('inmov-ftth-point-marker--filtered', !!filtered);
+			});
+		});
+		setRouteLayerVisibility(map, routesVisible);
+		map.__inmovFtthQuickFilter = key;
+		updateMarkerVisibility(map, { lightweight: true, refreshClusters: true });
+	}
+
+	function createMapQuickFilters(container, map, searchWrap) {
+		var host = mapShellFor(container);
+		if (!host || !host.insertBefore || !document.createElement || host.querySelector && host.querySelector('.inmov-ftth-map-quick-filters')) return;
+		var wrap = document.createElement('div');
+		wrap.className = 'inmov-ftth-map-quick-filters';
+		wrap.setAttribute('aria-label', 'Filtros rápidos do mapa');
+		var filters = [
+			['tudo', 'Tudo'], ['pontos', 'Pontos'], ['cto', 'CTOs'], ['olt', 'OLTs'], ['pop', 'POPs'], ['rotas', 'Rotas']
+		];
+		filters.forEach(function (filter, index) {
+			var button = document.createElement('button');
+			button.type = 'button';
+			if (!button.dataset) button.dataset = {};
+			button.className = 'inmov-ftth-map-quick-filter' + (index === 0 ? ' is-active' : '');
+			button.dataset.filter = filter[0];
+			button.setAttribute('aria-pressed', index === 0 ? 'true' : 'false');
+			button.textContent = filter[1];
+			button.addEventListener('click', function (event) {
+				if (event && event.stopPropagation) event.stopPropagation();
+				Array.prototype.forEach.call(wrap.querySelectorAll('button'), function (item) {
+					var active = item === button;
+					item.classList.toggle('is-active', active);
+					item.setAttribute('aria-pressed', active ? 'true' : 'false');
+				});
+				applyMapQuickFilter(container, map, filter[0]);
+			});
+			wrap.appendChild(button);
+		});
+		host.insertBefore(wrap, searchWrap ? searchWrap.nextSibling : container);
+	}
+
+	function createMapStylePanel(container, map) {
+		var host = mapShellFor(container);
+		if (!host || !host.appendChild || !document.createElement || host.querySelector && host.querySelector('.inmov-ftth-map-style-panel')) return;
+		var panel = document.createElement('section');
+		panel.className = 'inmov-ftth-map-style-panel';
+		panel.setAttribute('aria-hidden', 'true');
+		panel.innerHTML = '<div class="inmov-ftth-map-style-panel__head"><strong>Camada do mapa</strong><button type="button" class="inmov-ftth-map-style-panel__close" aria-label="Fechar">×</button></div>' +
+			'<div class="inmov-ftth-map-style-panel__styles" role="group" aria-label="Tipo de mapa">' +
+			'<button type="button" class="inmov-ftth-map-style-choice is-selected" data-map-style="default"><i class="is-standard"></i><span>Padrão</span></button>' +
+			'<button type="button" class="inmov-ftth-map-style-choice" data-map-style="satellite"><i class="is-satellite"></i><span>Satélite</span></button>' +
+			'</div>' +
+			'<div class="inmov-ftth-map-style-panel__section"><span>Exibir no mapa</span><div class="inmov-ftth-map-style-panel__toggles"><button type="button" class="is-on" data-map-layer="points" aria-pressed="true">Pontos</button><button type="button" class="is-on" data-map-layer="routes" aria-pressed="true">Cabos</button></div></div>';
+		host.appendChild(panel);
+		if (typeof panel.querySelector !== 'function' || typeof panel.querySelectorAll !== 'function') return panel;
+		var close = panel.querySelector('.inmov-ftth-map-style-panel__close');
+		var closePanel = function () { panel.classList.remove('is-open'); panel.setAttribute('aria-hidden', 'true'); };
+		if (close) close.addEventListener('click', closePanel);
+		Array.prototype.forEach.call(panel.querySelectorAll('[data-map-style]'), function (button) {
+			button.addEventListener('click', function (event) {
+				if (event && event.stopPropagation) event.stopPropagation();
+				var satellite = button.dataset.mapStyle === 'satellite';
+				map.__inmovFtthAlternateStyle = satellite;
+				Array.prototype.forEach.call(panel.querySelectorAll('[data-map-style]'), function (item) { item.classList.toggle('is-selected', item === button); });
+				try { if (typeof map.setStyle === 'function') map.setStyle(satellite ? alternateMapStyle : defaultMapStyle); } catch (error) {}
+			});
+		});
+		Array.prototype.forEach.call(panel.querySelectorAll('[data-map-layer]'), function (button) {
+			button.addEventListener('click', function (event) {
+				if (event && event.stopPropagation) event.stopPropagation();
+				var enabled = !button.classList.contains('is-on');
+				button.classList.toggle('is-on', enabled); button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+				if (button.dataset.mapLayer === 'routes') setRouteLayerVisibility(map, enabled);
+				if (button.dataset.mapLayer === 'points') applyMapQuickFilter(container, map, enabled ? 'pontos' : 'rotas');
+			});
+		});
+		return panel;
+	}
+
+	function createMapBottomBar(container, map) {
+		var host = mapShellFor(container);
+		if (!host || !host.appendChild || !document.createElement || host.querySelector && host.querySelector('.inmov-ftth-map-bottom-bar')) return;
+		var bar = document.createElement('nav');
+		bar.className = 'inmov-ftth-map-bottom-bar';
+		bar.setAttribute('aria-label', 'Ações do mapa');
+		bar.innerHTML = '<button type="button" class="is-active" data-map-bottom="explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="9" r="2.3" fill="currentColor"/></svg><span>Mapa</span></button>' +
+			'<button type="button" data-map-bottom="legend"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Zm-8 9 8 4 8-4M4 17l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Legenda</span></button>' +
+			'<button type="button" data-map-bottom="refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-13.6-5.7L4 7.7M4 4v3.7h3.7M4 13a8 8 0 0 0 13.6 5.7L20 16.3M20 20v-3.7h-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Atualizar</span></button>';
+		host.appendChild(bar);
+		if (typeof bar.querySelectorAll !== 'function') return;
+		Array.prototype.forEach.call(bar.querySelectorAll('[data-map-bottom]'), function (button) {
+			button.addEventListener('click', function (event) {
+				if (event && event.stopPropagation) event.stopPropagation();
+				var action = button.dataset.mapBottom;
+				if (action === 'explore') applyMapQuickFilter(container, map, 'tudo');
+				if (action === 'legend') {
+					var legend = host.querySelector('.inmov-ftth-map-legend');
+					if (legend) legend.classList.toggle('is-hidden');
+				}
+				if (action === 'refresh') { var refresh = host.querySelector('.inmov-ftth-refresh-control button'); if (refresh) refresh.click(); }
+			});
+		});
+	}
+
 	function addMapControls(container, map) {
 		if (controlsAdded.has(container) || !window.mapboxgl) return;
 		controlsAdded.add(container);
@@ -742,14 +884,12 @@
 					this._button.type = 'button';
 					this._button.className = 'inmov-ftth-globe-control__button';
 					this._button.innerHTML = '<span aria-hidden="true">🌐</span>';
-					this._button.setAttribute('aria-label', 'Alternar mapa de satélite');
-					this._button.title = 'Alternar mapa de satélite';
+					this._button.setAttribute('aria-label', 'Abrir opções de mapa');
+					this._button.title = 'Opções de mapa';
 					this._button.addEventListener('click', function (event) {
 						if (event && event.stopPropagation) event.stopPropagation();
-						var next = mapInstance.__inmovFtthAlternateStyle ? defaultMapStyle : alternateMapStyle;
-						mapInstance.__inmovFtthAlternateStyle = !mapInstance.__inmovFtthAlternateStyle;
-						this.classList.toggle('is-active', mapInstance.__inmovFtthAlternateStyle);
-						try { if (typeof mapInstance.setStyle === 'function') mapInstance.setStyle(next); } catch (error) {}
+						var panel = container.parentNode && container.parentNode.querySelector('.inmov-ftth-map-style-panel');
+						if (panel) { panel.classList.toggle('is-open'); panel.setAttribute('aria-hidden', panel.classList.contains('is-open') ? 'false' : 'true'); }
 					}.bind(this._button));
 					this._container.appendChild(this._button);
 					return this._container;
@@ -848,7 +988,9 @@
 				var isInteractive = originalTarget && originalTarget.closest && originalTarget.closest('.jet-map-marker, .mapboxgl-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-map-sheet');
 				if (isInteractive) return;
 				var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
-				if (sheet && sheet.classList) { sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); }
+				if (sheet && sheet.classList) { sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); var shell = sheet.closest && sheet.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.remove('inmov-ftth-map-shell--sheet-open'); }
+				var stylePanel = document.querySelector('.inmov-ftth-map-style-panel.is-open');
+				if (stylePanel && stylePanel.classList) { stylePanel.classList.remove('is-open'); stylePanel.setAttribute('aria-hidden', 'true'); }
 				clearPointSelection();
 				clearRouteSelection();
 			});
@@ -866,6 +1008,9 @@
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
 		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
 		createMapLegend(container);
+		createMapQuickFilters(container, map, wrap);
+		createMapStylePanel(container, map);
+		createMapBottomBar(container, map);
 		if (!map.__inmovFtthStyleApplied) {
 			map.__inmovFtthStyleApplied = true;
 			try { if (typeof map.setStyle === 'function') map.setStyle(defaultMapStyle); } catch (error) {}
@@ -893,7 +1038,7 @@
 		container.parentNode.appendChild(sheet);
 		if (!sheet.querySelector) return;
 		var closeButton = sheet.querySelector && sheet.querySelector('.inmov-ftth-map-sheet__close');
-		var closeSheet = function () { if (sheet.classList) sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); clearPointSelection(); clearRouteSelection(); };
+		var closeSheet = function () { if (sheet.classList) sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); var shell = sheet.closest && sheet.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.remove('inmov-ftth-map-shell--sheet-open'); clearPointSelection(); clearRouteSelection(); };
 		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', closeSheet);
 		var handle = sheet.querySelector('.inmov-ftth-map-sheet__handle');
 		if (handle && handle.addEventListener) {
@@ -1243,6 +1388,9 @@
 			}
 			if (selectedRouteRecord === record && selectedRouteId && map.getLayer(highlightLayerId)) {
 				try { map.setFilter(highlightLayerId, ['==', ['id'], selectedRouteId]); } catch (error) {}
+			}
+			if (map.__inmovFtthQuickFilter && map.__inmovFtthQuickFilter !== 'tudo') {
+				applyMapQuickFilter(record.container, map, map.__inmovFtthQuickFilter);
 			}
 
 			bindLayerEvents(record);

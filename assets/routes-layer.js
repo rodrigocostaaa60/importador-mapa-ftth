@@ -19,14 +19,29 @@
 	var pointClickHandlers = new WeakSet();
 	var pointRecords = {};
 
+	function getSheetOffset(map) {
+		if (!window.matchMedia || !window.matchMedia('(max-width: 767px)').matches) return [0, 0];
+		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
+		var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
+		if (!container || !sheet || !container.getBoundingClientRect) return [0, 0];
+		var mapRect = container.getBoundingClientRect();
+		var sheetRect = sheet.getBoundingClientRect();
+		var search = document.querySelector('.inmov-ftth-point-search');
+		var searchBottom = search && search.getBoundingClientRect ? search.getBoundingClientRect().bottom - mapRect.top : 0;
+		var visibleTop = Math.max(8, searchBottom + 8);
+		var visibleBottom = Math.min(mapRect.height - 8, mapRect.height - sheetRect.height - 8);
+		if (visibleBottom <= visibleTop) return [0, -Math.min(120, mapRect.height * 0.2)];
+		return [0, ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2)];
+	}
+
 	function openSheet(map, title, rows, center) {
-		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
 		sheet.querySelector('.inmov-ftth-map-sheet__title').textContent = title || 'Item do mapa';
 		var body = sheet.querySelector('.inmov-ftth-map-sheet__body'); body.innerHTML = '';
 		rows.forEach(function (row) { if (row[1] === undefined || row[1] === null || row[1] === '') return; var div = document.createElement('div'); div.className = 'inmov-ftth-map-sheet__row'; div.innerHTML = '<b></b><span></span>'; div.querySelector('b').textContent = row[0]; div.querySelector('span').textContent = row[1]; body.appendChild(div); });
 		sheet.classList.add('is-open');
+		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), offset: getSheetOffset(map), essential: true });
 	}
 
 	function openPointSheet(map, id) {
@@ -43,9 +58,8 @@
 				var marker = entry && entry.marker;
 				if (!marker || marker._map !== map || !marker.getElement || pointClickHandlers.has(marker)) return;
 				pointClickHandlers.add(marker);
-				marker.getElement().addEventListener('click', function () {
-					var position = marker.getLngLat && marker.getLngLat();
-					if (position && typeof map.flyTo === 'function') map.flyTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 13, 15), essential: true });
+				marker.getElement().addEventListener('click', function (event) {
+					if (event && event.stopPropagation) event.stopPropagation();
 					openPointSheet(map, id);
 				}, true);
 			});

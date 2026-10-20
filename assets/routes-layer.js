@@ -531,6 +531,23 @@
 		if (node) node.textContent = value || '';
 	}
 
+	function syncSheetTitleMarquee(sheet) {
+		var viewport = sheet && sheet.querySelector ? sheet.querySelector('.inmov-ftth-map-sheet__title-viewport') : null;
+		var title = sheet && sheet.querySelector ? sheet.querySelector('.inmov-ftth-map-sheet__title') : null;
+		if (!viewport || !title) return;
+		title.classList.remove('is-marquee');
+		title.style.removeProperty('--inmov-title-shift');
+		var schedule = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame.bind(window) : function (callback) { window.setTimeout(callback, 0); };
+		schedule(function () {
+			if (!title.isConnected) return;
+			var overflow = title.scrollWidth - viewport.clientWidth;
+			if (overflow > 2) {
+				title.style.setProperty('--inmov-title-shift', (-overflow) + 'px');
+				title.classList.add('is-marquee');
+			}
+		});
+	}
+
 	function copySheetValue(value) {
 		if (!value) return;
 		try {
@@ -563,6 +580,7 @@
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__status-text', status);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__code', options.code ? '#' + options.code : '');
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__title', title || 'Item do mapa');
+		syncSheetTitleMarquee(sheet);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__locality-text', options.locality || 'Localidade não informada');
 		var statusDot = sheet.querySelector('.inmov-ftth-map-sheet__status-dot');
 		if (statusDot) statusDot.style.setProperty('--sheet-status-color', (statusKey === 'inativo' ? '#ef4444' : statusKey === 'manutencao' ? '#f59e0b' : '#10b981'));
@@ -745,7 +763,7 @@
 				'<div class="inmov-ftth-map-sheet__icon" aria-hidden="true">•</div>' +
 				'<div class="inmov-ftth-map-sheet__heading">' +
 					'<div class="inmov-ftth-map-sheet__meta"><span class="inmov-ftth-map-sheet__type"></span><span class="inmov-ftth-map-sheet__status"><i class="inmov-ftth-map-sheet__status-dot"></i><span class="inmov-ftth-map-sheet__status-text"></span></span></div>' +
-					'<h3 class="inmov-ftth-map-sheet__title"></h3>' +
+					'<div class="inmov-ftth-map-sheet__title-viewport"><h3 class="inmov-ftth-map-sheet__title"></h3></div>' +
 					'<p class="inmov-ftth-map-sheet__locality"><span aria-hidden="true">⌖</span><span class="inmov-ftth-map-sheet__locality-text"></span><span class="inmov-ftth-map-sheet__code"></span></p>' +
 				'</div>' +
 				'<div class="inmov-ftth-map-sheet__header-actions"><button type="button" class="inmov-ftth-map-sheet__close" aria-label="Fechar">×</button></div>' +

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.5.8
+ * Version: 0.5.9
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.5.8';
+	const VERSION               = '0.5.9';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -179,7 +179,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		return rest_ensure_response( array_map( function( $row ) {
 			$saved_type = (string) $row['ponto_tipo'];
 			$inferred_type = $this->detect_point_type( strtolower( remove_accents( (string) $row['ponto_nome'] . ' ' . (string) $row['ponto_observacao'] ) ) );
-			$display_type = ( 'outro' === $saved_type && 'outro' !== $inferred_type ) ? $inferred_type : $saved_type;
+			$display_type = ( ( '' === $saved_type || 'outro' === $saved_type ) && 'outro' !== $inferred_type ) ? $inferred_type : $saved_type;
 			return array(
 			'id' => (int) $row['_ID'], 'code' => (string) $row['ponto_codigo'], 'name' => (string) $row['ponto_nome'],
 			'type' => $display_type, 'locality' => (string) $row['ponto_localidade'], 'address' => (string) $row['ponto_endereco'],

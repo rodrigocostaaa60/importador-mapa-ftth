@@ -389,6 +389,7 @@
 			resetMapShellScroll(map);
 			var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
 			var offset = [0, 0];
+			var inventoryOpen = !!document.querySelector('.inmov-ftth-map-inventory-panel.is-open');
 			if (container && container.getBoundingClientRect) {
 				var mapRect = container.getBoundingClientRect();
 				var search = document.querySelector('.inmov-ftth-point-search');
@@ -397,7 +398,28 @@
 				var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
 				if (visibleBottom > visibleTop) offset[1] = ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2);
 			}
-			var flyOptions = { center: target, zoom: zoom, offset: offset, duration: options.duration !== undefined ? options.duration : 450, essential: options.essential !== false };
+			/* During the inventory sheet transition, Mapbox's offset calculation is
+			 * unstable. Use a neutral flyTo there and correct against the final
+			 * panel bounds once the animation has ended. */
+			var flyOptions = { center: target, zoom: zoom, offset: inventoryOpen ? [0, 0] : offset, duration: options.duration !== undefined ? options.duration : 450, essential: options.essential !== false };
+			if (inventoryOpen && typeof map.once === 'function' && typeof map.project === 'function' && typeof map.panBy === 'function') {
+				try {
+					map.once('moveend', function () {
+						if (map.__inmovFtthFocusState !== focusState || !container || !container.getBoundingClientRect) return;
+						var mapRect = container.getBoundingClientRect();
+						var search = document.querySelector('.inmov-ftth-point-search');
+						var panel = document.querySelector('.inmov-ftth-map-inventory-panel.is-open');
+						var visibleTop = search && search.getBoundingClientRect ? Math.max(8, search.getBoundingClientRect().bottom - mapRect.top + 8) : 8;
+						var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
+						if (visibleBottom <= visibleTop) return;
+						var point = map.project({ lng: target[0], lat: target[1] });
+						var desiredY = (visibleTop + visibleBottom) / 2;
+						var deltaY = desiredY - point.y;
+						if (Math.abs(deltaY) < 3 || Math.abs(deltaY) > mapRect.height * 0.9) return;
+						try { map.panBy([0, deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([0, deltaY], { duration: 0 }); } catch (ignored) {} }
+					});
+				} catch (error) {}
+			}
 			try { map.flyTo(flyOptions); } catch (error) {}
 		};
 		/* Wait for the bottom sheet's 220ms entrance transition, then include its

@@ -401,10 +401,13 @@
 			/* Inventory selections are already made with the sheet open. Do not start
 			 * another animated flight here: the sheet transition and the previous city
 			 * fit can otherwise compete for moveend and leave the item under search. */
-			var flyOptions = { center: target, zoom: zoom, offset: inventoryOpen ? [0, 0] : offset, duration: options.duration !== undefined ? options.duration : 450, essential: options.essential !== false };
+			/* fitBounds() stores its camera padding on the Mapbox transform. Clear it
+			 * before every item focus; otherwise a city selected in the inventory can
+			 * keep an invisible bottom padding and pull the next point upward. */
+			var flyOptions = { center: target, zoom: zoom, offset: inventoryOpen ? [0, 0] : offset, padding: 0, duration: options.duration !== undefined ? options.duration : 450, essential: options.essential !== false };
 			if (inventoryOpen && typeof map.jumpTo === 'function' && typeof map.project === 'function' && typeof map.panBy === 'function') {
 				try {
-					map.jumpTo({ center: target, zoom: zoom, essential: options.essential !== false });
+					map.jumpTo({ center: target, zoom: zoom, padding: 0, essential: options.essential !== false });
 					var correctInventoryPosition = function () {
 						if (map.__inmovFtthFocusState !== focusState || !container || !container.getBoundingClientRect) return;
 						var mapRect = container.getBoundingClientRect();

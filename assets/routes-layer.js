@@ -337,19 +337,59 @@
 	}
 
 	function getSheetOffset(map) {
-		if (!window.matchMedia || !window.matchMedia('(max-width: 767px)').matches) return [0, 0];
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
 		var panel = sheet || document.querySelector('.inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
 		if (!container || !panel || !container.getBoundingClientRect) return [0, 0];
 		var mapRect = container.getBoundingClientRect();
-		var sheetRect = panel.getBoundingClientRect();
+		var panelRect = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+		var isMobileViewport = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+		if (!isMobileViewport && panelRect && panelRect.width < mapRect.width * 0.8) return [0, 0];
 		var search = document.querySelector('.inmov-ftth-point-search');
 		var searchBottom = search && search.getBoundingClientRect ? search.getBoundingClientRect().bottom - mapRect.top : 0;
 		var visibleTop = Math.max(8, searchBottom + 8);
-		var visibleBottom = Math.min(mapRect.height - 8, mapRect.height - sheetRect.height - 8);
+		var visibleBottom = panelRect ? Math.min(mapRect.height - 8, panelRect.top - mapRect.top - 8) : mapRect.height - 8;
 		if (visibleBottom <= visibleTop) return [0, -Math.min(120, mapRect.height * 0.2)];
 		return [0, ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2)];
+	}
+
+	/* Centraliza um item na área realmente disponível do mapa. O painel inferior
+	 * usa uma transição, então o offset calculado no mesmo frame em que ele abre
+	 * ainda pode considerar o painel fora da tela. Fazemos uma correção depois
+	 * do moveend usando a projeção real do ponto. */
+	function focusMapCoordinate(map, center, zoom, options) {
+		if (!map || !Array.isArray(center) || center.length < 2 || typeof map.flyTo !== 'function') return;
+		options = options || {};
+		var target = [Number(center[0]), Number(center[1])];
+		if (!Number.isFinite(target[0]) || !Number.isFinite(target[1])) return;
+		var correct = function () {
+			if (typeof map.project !== 'function' || typeof map.panBy !== 'function') return;
+			var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
+			if (!container || !container.getBoundingClientRect) return;
+			var mapRect = container.getBoundingClientRect();
+			var search = document.querySelector('.inmov-ftth-point-search');
+			var panel = document.querySelector('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+			var visibleTop = search && search.getBoundingClientRect ? Math.max(8, search.getBoundingClientRect().bottom - mapRect.top + 8) : 8;
+			var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
+			if (visibleBottom <= visibleTop) return;
+			var point = map.project({ lng: target[0], lat: target[1] });
+			var desiredY = (visibleTop + visibleBottom) / 2;
+			var deltaY = desiredY - point.y;
+			if (Math.abs(deltaY) < 3 || Math.abs(deltaY) > mapRect.height * 0.9) return;
+			try { map.panBy([0, deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([0, deltaY], { duration: 0 }); } catch (ignored) {} }
+		};
+		var flyOptions = { center: target, zoom: zoom, essential: options.essential !== false };
+		/* A zero offset gives us a stable reference point; correction below then
+		 * accounts for the final, animated panel geometry. */
+		if (options.duration !== undefined) flyOptions.duration = options.duration;
+		try { map.flyTo(flyOptions); } catch (error) { return; }
+		if (typeof map.once === 'function') {
+			try { map.once('moveend', correct); } catch (error) {}
+		}
+		if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+			window.setTimeout(correct, 260);
+			window.setTimeout(correct, 520);
+		}
 	}
 
 	function getDetailZoom(map, latitude) {
@@ -523,6 +563,19 @@
 		else window.setTimeout(trigger, 350);
 	}
 
+	function getOverviewZoom(map) {
+		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
+		var width = container && container.clientWidth ? container.clientWidth : 600;
+		return width < 500 ? 12.3 : 12.8;
+	}
+
+	function applyInitialNetworkOverview(map) {
+		if (!map || map.__inmovFtthInitialOverviewApplied || typeof map.flyTo !== 'function') return;
+		map.__inmovFtthInitialOverviewApplied = true;
+		var center = [-39.965351, -13.524918];
+		try { map.flyTo({ center: center, zoom: getOverviewZoom(map), duration: 0, essential: true }); } catch (error) {}
+	}
+
 	function normalizeSheetStatus(value) {
 		var raw = String(value || '').trim();
 		if (!raw) return 'Não informado';
@@ -667,7 +720,7 @@
 		var sheetShell = sheet.closest && sheet.closest('.inmov-ftth-map-shell');
 		if (sheetShell && sheetShell.classList) sheetShell.classList.add('inmov-ftth-map-shell--sheet-open');
 		sheet.setAttribute('aria-hidden', 'false');
-		if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
+		if (center) focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
 	}
 
 	function openPointSheet(map, id) {
@@ -1049,7 +1102,7 @@
 				var minLng = coords.reduce(function (v, item) { return Math.min(v, item[0]); }, Infinity), maxLng = coords.reduce(function (v, item) { return Math.max(v, item[0]); }, -Infinity);
 				var minLat = coords.reduce(function (v, item) { return Math.min(v, item[1]); }, Infinity), maxLat = coords.reduce(function (v, item) { return Math.max(v, item[1]); }, -Infinity);
 				map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: getMapFitPadding(map), maxZoom: 14, duration: 550, essential: true });
-			} else if (typeof map.flyTo === 'function') map.flyTo({ center: coords[0], zoom: 13, offset: getSheetOffset(map), essential: true });
+			} else if (typeof map.flyTo === 'function') focusMapCoordinate(map, coords[0], 13);
 		}
 		function setPanelOpen(open) {
 			panel.classList.toggle('is-open', open); panel.setAttribute('aria-hidden', open ? 'false' : 'true');
@@ -1059,7 +1112,7 @@
 		function centerPoint(item, details) {
 			var center = markerCoordinates(item);
 			if (!center) return;
-			if (typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
+			focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
 			if (details) {
 				var group = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
 				if (group && group[0] && group[0].marker && group[0].marker.getElement) group[0].marker.getElement().click();
@@ -1110,7 +1163,7 @@
 			if (target.dataset.category) { var city = panel.__inmovFtthInventoryCity; if (city) renderCategory(city, target.dataset.category); return; }
 			if (target.dataset.inventoryAction === 'center') {
 				if (target.dataset.inventoryKind === 'point') centerPoint((getRecords() || []).find(function (item) { return String(item.id) === target.dataset.itemId; }), false);
-				else { var feature = routeData && routeData.features && routeData.features.find(function (item) { return String(item.id) === target.dataset.routeId; }); var routeCoords = routeCoordinates(feature); var coords = routeCoords[0]; if (coords && map.flyTo) map.flyTo({ center: coords, zoom: getDetailZoom(map, coords[1]), offset: getSheetOffset(map), essential: true }); }
+				else { var feature = routeData && routeData.features && routeData.features.find(function (item) { return String(item.id) === target.dataset.routeId; }); var routeCoords = routeCoordinates(feature); var coords = routeCoords[0]; if (coords && map.flyTo) focusMapCoordinate(map, coords, getDetailZoom(map, coords[1])); }
 			}
 		});
 		panel.__inmovFtthRender = renderCityList;
@@ -1261,7 +1314,7 @@
 					if (Number.isFinite(Number(eventHeading)) && Number(eventHeading) >= 0) rotateToHeading(map, eventHeading);
 					if (!map.__inmovFtthFirstGeolocateHandled) {
 						map.__inmovFtthFirstGeolocateHandled = true;
-						map.flyTo({ center: [event.longitude, event.latitude], zoom: getDetailZoom(map, event.latitude), essential: true });
+						map.flyTo({ center: [event.longitude, event.latitude], zoom: getOverviewZoom(map), essential: true });
 					}
 				}
 			});
@@ -1295,6 +1348,8 @@
 			map.on('move', function () { scheduleMarkerVisibility(map); });
 			map.on('zoomend', function () { updateMarkerVisibility(map); });
 			map.on('resize', function () { updateMarkerVisibility(map); });
+			if (typeof map.loaded === 'function' && map.loaded()) applyInitialNetworkOverview(map);
+			else if (typeof map.once === 'function') map.once('load', function () { applyInitialNetworkOverview(map); });
 			if (nativeLocationControl && map.__inmovFtthGeolocateControl) startNativeGeolocation(map, map.__inmovFtthGeolocateControl);
 		} catch (error) {}
 		var wrap = document.createElement('div');
@@ -1346,7 +1401,7 @@
 		var centerButton = sheet.querySelector('[data-sheet-action="center"]');
 		if (centerButton && centerButton.addEventListener) centerButton.addEventListener('click', function () {
 			var center = sheet.__inmovFtthCenter;
-			if (center && typeof map.flyTo === 'function') map.flyTo({ center: center, zoom: getDetailZoom(map, center[1]), offset: getSheetOffset(map), essential: true });
+			if (center) focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
 		});
 		var copyButton = sheet.querySelector('[data-sheet-action="copy-coordinates"]');
 		if (copyButton && copyButton.addEventListener) copyButton.addEventListener('click', function () { copySheetValue(sheet.__inmovFtthCoordinates || ''); copyButton.classList.add('is-copied'); window.setTimeout(function () { copyButton.classList.remove('is-copied'); }, 1400); });
@@ -1411,7 +1466,7 @@
 				content.appendChild(title); content.appendChild(meta); button.appendChild(icon); button.appendChild(content);
 				button.addEventListener('click', function () {
 					searchResultsOpen = false;
-					map.flyTo({ center: point, zoom: getDetailZoom(map, point[1]), offset: getSheetOffset(map), essential: true });
+					focusMapCoordinate(map, point, getDetailZoom(map, point[1]));
 					var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
 					if (markerGroup && markerGroup[0] && markerGroup[0].marker && markerGroup[0].marker.getElement) markerGroup[0].marker.getElement().click();
 					results.innerHTML = ''; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = false; input.blur();
@@ -1422,17 +1477,18 @@
 		input.addEventListener('input', function () { searchResultsOpen = !!input.value.trim(); if (mapHost) mapHost.__inmovFtthSearchResultsOpen = searchResultsOpen; render(); });
 		input.addEventListener('focus', function () { if (input.value.trim()) { searchResultsOpen = true; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = true; render(); } });
 		if (container.addEventListener) container.addEventListener('click', function (event) {
+			if (document.querySelector('.inmov-ftth-map-sheet.is-open')) return;
 			var markerElement = event.target && event.target.closest ? event.target.closest('.jet-map-marker') : null;
 			if (!markerElement || typeof map.flyTo !== 'function') return;
 			var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData;
 			if (!markerGroup) return;
-			Object.keys(markerGroup).some(function (id) { var marker = markerGroup[id]?.[0]?.marker; if (marker && marker.getElement && marker.getElement() === markerElement) { var position = marker.getLngLat(); map.flyTo({ center: [position.lng, position.lat], zoom: getDetailZoom(map, position.lat), essential: true }); return true; } return false; });
+			Object.keys(markerGroup).some(function (id) { var marker = markerGroup[id]?.[0]?.marker; if (marker && marker.getElement && marker.getElement() === markerElement) { var position = marker.getLngLat(); focusMapCoordinate(map, [position.lng, position.lat], getDetailZoom(map, position.lat)); return true; } return false; });
 		});
 		if (!nativeLocationControl && window.navigator && window.navigator.geolocation) window.navigator.geolocation.getCurrentPosition(function (position) {
 			userPosition = [position.coords.longitude, position.coords.latitude];
 			if (!map.__inmovFtthInitialLocationApplied && typeof map.flyTo === 'function') {
 				map.__inmovFtthInitialLocationApplied = true;
-				map.flyTo({ center: userPosition, zoom: getDetailZoom(map, position.coords.latitude), essential: true });
+				map.flyTo({ center: userPosition, zoom: getOverviewZoom(map), essential: true });
 			}
 		}, function () {}, { enableHighAccuracy: true, maximumAge: 300000, timeout: 8000 });
 	}

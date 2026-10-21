@@ -392,7 +392,8 @@
 .inmov-ftth-map-inventory-panel h4{margin:0 0 2px;font-size:19px}
 
 @media(max-width:767px){
- .inmov-ftth-map-shell .inmov-ftth-point-search:before{top:31px;transform:translateY(-50%);line-height:1}
+ .inmov-ftth-map-shell .inmov-ftth-point-search:before{top:31px!important;inset-block-start:31px!important;transform:translateY(-50%);line-height:1;z-index:4}
+ .inmov-ftth-map-shell .inmov-ftth-point-search:after{top:31px!important;inset-block-start:31px!important;transform:translateY(-50%);z-index:4}
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right{bottom:92px}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel{right:0;bottom:0;left:0;width:100%;max-height:calc(100% - 12px);padding:0;border:0;border-radius:24px 24px 0 0;overflow-y:auto;overflow-x:hidden;box-shadow:0 -12px 40px rgba(15,23,42,.24);transform:translateY(105%)}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel.is-open{transform:translateY(0)}
@@ -415,3 +416,29 @@
 .inmov-ftth-map-shell .inmov-ftth-map-style-panel__checklist label:last-child>i{--check-color:#7c3aed;width:28px;height:22px}
 .inmov-ftth-map-shell .inmov-ftth-map-style-panel.is-dragging,.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel.is-dragging,.inmov-ftth-map-shell .inmov-ftth-map-sheet.is-dragging{transition:none;user-select:none}
 .inmov-ftth-map-shell .inmov-ftth-map-style-panel__handle,.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__handle,.inmov-ftth-map-shell .inmov-ftth-map-sheet__handle{touch-action:none;cursor:grab}
+
+/* Inventário: mesma linguagem visual dos detalhes, com hierarquia clara e
+ * cartões de leitura rápida para cidade, categoria e item. */
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__head{padding:8px 22px 14px;border-bottom:1px solid #edf2f7;font-size:18px;letter-spacing:-.01em}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__head strong{display:block}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body{padding:16px 18px calc(24px + env(safe-area-inset-bottom));scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body::-webkit-scrollbar{width:6px}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body::-webkit-scrollbar-thumb{border-radius:99px;background:#cbd5e1}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__hint{margin:0 2px 12px;color:#7890aa;font-size:12px;line-height:1.4}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel h4{margin:0 0 4px;color:#0f172a;font-size:22px;line-height:1.15;letter-spacing:-.02em}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__back{display:inline-flex;align-items:center;gap:4px;margin:0 0 10px;color:#2563eb;font-size:12px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item{min-height:58px;margin:7px 0;padding:11px 13px;border:1px solid #dfe8f3;border-radius:16px;background:#fff;box-shadow:0 2px 7px rgba(15,23,42,.04);transition:border-color .16s ease,background .16s ease,box-shadow .16s ease,transform .16s ease}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city:hover,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category:hover,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item:hover{border-color:#b9d1ed;background:#f8fbff;box-shadow:0 5px 14px rgba(37,99,235,.10);transform:translateY(-1px)}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city span,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item span{gap:4px}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city strong,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category span,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item strong{color:#152238;font-size:14px;line-height:1.25}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city small,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item small{color:#7890aa;font-size:11px;font-weight:600;line-height:1.25}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city b,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category b,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item b{display:grid;place-items:center;min-width:30px;height:28px;margin-left:10px;border-radius:999px;background:#eef5ff;color:#2563eb;font-size:12px;font-weight:800}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-city b{font-size:20px;background:transparent;color:#7890aa}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-category{gap:10px;min-height:60px}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-category i{width:34px;height:34px;border-radius:11px;background:color-mix(in srgb,var(--inventory-color,#2563eb) 14%,#fff);color:var(--inventory-color,#2563eb);font-size:18px}
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-item b{font-size:18px;background:#f4f7fb;color:#64748b}
+@media(max-width:767px){
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__head{padding:7px 22px 14px;font-size:19px}
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body{padding:16px 18px calc(28px + env(safe-area-inset-bottom))}
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-city,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item{min-height:62px}
+}

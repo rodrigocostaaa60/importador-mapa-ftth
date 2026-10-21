@@ -349,11 +349,39 @@
 		return null;
 	}
 
+	/* When bottom sheets are stacked (for example, a detail sheet opened from
+	 * an inventory selection), only the sheet visually in front may affect the
+	 * map's usable viewport. Looking for the first `.is-open` element is not
+	 * enough because the inventory can remain open behind the detail sheet.
+	 * Select the visible panel with the greatest z-index, falling back to DOM
+	 * order when two panels intentionally share the same layer. */
+	function getActiveMapPanel() {
+		if (!document || !document.querySelectorAll) return null;
+		var panels = document.querySelectorAll('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+		var active = null;
+		var activeZ = -Infinity;
+		var activeIndex = -1;
+		Array.prototype.forEach.call(panels, function (panel, index) {
+			if (!panel || panel.getAttribute('aria-hidden') === 'true') return;
+			var rect = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+			if (!rect || rect.width <= 0 || rect.height <= 0) return;
+			var style = window.getComputedStyle ? window.getComputedStyle(panel) : null;
+			if (style && (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0)) return;
+			var zIndex = style ? parseFloat(style.zIndex) : 0;
+			if (!Number.isFinite(zIndex)) zIndex = 0;
+			if (zIndex > activeZ || (zIndex === activeZ && index > activeIndex)) {
+				active = panel;
+				activeZ = zIndex;
+				activeIndex = index;
+			}
+		});
+		return active;
+	}
+
 	function getSheetOffset(map) {
 		resetMapShellScroll(map);
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
-		var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
-		var panel = sheet || document.querySelector('.inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+		var panel = getActiveMapPanel();
 		if (!container || !panel || !container.getBoundingClientRect) return [0, 0];
 		var mapRect = container.getBoundingClientRect();
 		var panelRect = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
@@ -389,11 +417,12 @@
 			resetMapShellScroll(map);
 			var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
 			var offset = [0, 0];
-			var inventoryOpen = !!document.querySelector('.inmov-ftth-map-inventory-panel.is-open');
+			var activePanel = getActiveMapPanel();
+			var inventoryOpen = !!(activePanel && activePanel.classList && activePanel.classList.contains('inmov-ftth-map-inventory-panel'));
 			if (container && container.getBoundingClientRect) {
 				var mapRect = container.getBoundingClientRect();
 				var search = document.querySelector('.inmov-ftth-point-search');
-				var panel = document.querySelector('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+				var panel = getActiveMapPanel();
 				var visibleTop = search && search.getBoundingClientRect ? Math.max(8, search.getBoundingClientRect().bottom - mapRect.top + 8) : 8;
 				var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
 				if (visibleBottom > visibleTop) offset[1] = ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2);
@@ -412,7 +441,8 @@
 						if (map.__inmovFtthFocusState !== focusState || !container || !container.getBoundingClientRect) return;
 						var mapRect = container.getBoundingClientRect();
 						var search = document.querySelector('.inmov-ftth-point-search');
-						var panel = document.querySelector('.inmov-ftth-map-inventory-panel.is-open');
+						var panel = getActiveMapPanel();
+						if (!panel || !panel.classList || !panel.classList.contains('inmov-ftth-map-inventory-panel')) return;
 						var visibleTop = search && search.getBoundingClientRect ? Math.max(8, search.getBoundingClientRect().bottom - mapRect.top + 8) : 8;
 						var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
 						if (visibleBottom <= visibleTop) return;
@@ -437,7 +467,8 @@
 		 * final bounds in flyTo's offset. This avoids the visible second jump from
 		 * a post-animation pan correction. */
 		if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-			var focusDelay = document.querySelector('.inmov-ftth-map-inventory-panel.is-open') ? 0 : 240;
+			var focusPanel = getActiveMapPanel();
+			var focusDelay = focusPanel && focusPanel.classList && focusPanel.classList.contains('inmov-ftth-map-inventory-panel') ? 0 : 240;
 			focusState.timers.push(window.setTimeout(startFocus, focusDelay));
 		} else {
 			startFocus();
@@ -918,7 +949,7 @@
 		var mapRect = container.getBoundingClientRect();
 		var search = document.querySelector('.inmov-ftth-point-search');
 		var top = search && search.getBoundingClientRect ? Math.max(24, search.getBoundingClientRect().bottom - mapRect.top + 18) : 24;
-		var panel = document.querySelector('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+		var panel = getActiveMapPanel();
 		var bottom = panel && panel.getBoundingClientRect ? Math.max(24, mapRect.bottom - panel.getBoundingClientRect().top + 18) : 24;
 		return { top: top, right: 24, bottom: bottom, left: 24 };
 	}

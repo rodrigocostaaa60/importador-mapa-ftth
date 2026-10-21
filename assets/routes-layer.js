@@ -366,7 +366,10 @@
 			var rect = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
 			if (!rect || rect.width <= 0 || rect.height <= 0) return;
 			var style = window.getComputedStyle ? window.getComputedStyle(panel) : null;
-			if (style && (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0)) return;
+			/* Keep a panel that is entering with a CSS opacity transition: the
+			 * `.is-open` state and z-index already identify it as the foreground
+			 * panel, while its opacity may still be near zero for a frame. */
+			if (style && (style.display === 'none' || style.visibility === 'hidden')) return;
 			var zIndex = style ? parseFloat(style.zIndex) : 0;
 			if (!Number.isFinite(zIndex)) zIndex = 0;
 			if (zIndex > activeZ || (zIndex === activeZ && index > activeIndex)) {

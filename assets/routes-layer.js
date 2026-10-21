@@ -30,6 +30,7 @@
 	// streets-v12 is a standard street style; satellite-streets-v12 is the
 	// Mapbox style that actually provides satellite imagery.
 	var alternateMapStyle = 'mapbox://styles/mapbox/satellite-streets-v12';
+	var darkMapStyle = 'mapbox://styles/mapbox/dark-v11';
 
 	var pointVisuals = {
 		pop: { label: 'POP', glyph: '▣', color: '#7c3aed' },
@@ -762,11 +763,32 @@
 		});
 	}
 
+	function applyPointLayerVisibility(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups) return;
+		var visibility = map.__inmovFtthPointTypeVisibility || {};
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || !marker.getElement) return;
+				var element = marker.getElement();
+				if (!element || !element.classList) return;
+				var type = normalizePointType((pointRecords[id] || {}).type);
+				element.classList.toggle('inmov-ftth-point-marker--filtered', visibility[type] === false);
+			});
+		});
+		updateMarkerVisibility(map, { lightweight: true, refreshClusters: true });
+	}
+
 	function applyMapQuickFilter(container, map, key) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		if (!groups) return;
 		var pointFilter = key === 'rotas' ? null : (key === 'pontos' || key === 'tudo' ? null : normalizePointType(key));
 		var routesVisible = key === 'tudo' || key === 'rotas';
+		if (key === 'tudo') {
+			map.__inmovFtthPointTypeVisibility = {};
+			Object.keys(pointVisuals).forEach(function (type) { map.__inmovFtthPointTypeVisibility[type] = true; });
+		}
 		Object.keys(groups).forEach(function (id) {
 			(groups[id] || []).forEach(function (entry) {
 				var marker = entry && entry.marker;
@@ -780,6 +802,7 @@
 		});
 		setRouteLayerVisibility(map, routesVisible);
 		map.__inmovFtthQuickFilter = key;
+		if (key === 'tudo') applyPointLayerVisibility(map);
 		updateMarkerVisibility(map, { lightweight: true, refreshClusters: true });
 	}
 
@@ -820,12 +843,22 @@
 		var panel = document.createElement('section');
 		panel.className = 'inmov-ftth-map-style-panel';
 		panel.setAttribute('aria-hidden', 'true');
-		panel.innerHTML = '<div class="inmov-ftth-map-style-panel__head"><strong>Camada do mapa</strong><button type="button" class="inmov-ftth-map-style-panel__close" aria-label="Fechar">×</button></div>' +
-			'<div class="inmov-ftth-map-style-panel__styles" role="group" aria-label="Tipo de mapa">' +
+		panel.innerHTML = '<div class="inmov-ftth-map-style-panel__head"><strong>Configurações do mapa</strong><button type="button" class="inmov-ftth-map-style-panel__close" aria-label="Fechar">×</button></div>' +
+			'<div class="inmov-ftth-map-style-panel__section"><span>Tipo de mapa</span><div class="inmov-ftth-map-style-panel__styles" role="group" aria-label="Tipo de mapa">' +
 			'<button type="button" class="inmov-ftth-map-style-choice is-selected" data-map-style="default"><i class="is-standard"></i><span>Padrão</span></button>' +
 			'<button type="button" class="inmov-ftth-map-style-choice" data-map-style="satellite"><i class="is-satellite"></i><span>Satélite</span></button>' +
-			'</div>' +
-			'<div class="inmov-ftth-map-style-panel__section"><span>Exibir no mapa</span><div class="inmov-ftth-map-style-panel__toggles"><button type="button" class="is-on" data-map-layer="points" aria-pressed="true">Pontos</button><button type="button" class="is-on" data-map-layer="routes" aria-pressed="true">Cabos</button></div></div>';
+			'<button type="button" class="inmov-ftth-map-style-choice" data-map-style="dark"><i class="is-dark"></i><span>Escuro</span></button>' +
+			'</div></div>' +
+			'<div class="inmov-ftth-map-style-panel__section"><span>Itens exibidos</span><div class="inmov-ftth-map-style-panel__checklist">' +
+			'<label><input type="checkbox" data-map-layer="routes" checked><i class="is-line"></i><span>Cabos e rotas</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-cto" checked><i class="is-cto">▦</i><span>CTOs</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-olt" checked><i class="is-olt">◉</i><span>OLTs</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-pop" checked><i class="is-pop">▣</i><span>POPs</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-caixa_emenda" checked><i class="is-caixa">✣</i><span>Caixas de emenda</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-loja" checked><i class="is-loja">⌂</i><span>Lojas / sedes</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-poste" checked><i class="is-poste">│</i><span>Postes</span></label>' +
+			'<label><input type="checkbox" data-map-layer="point-outro" checked><i class="is-outro">•</i><span>Outros pontos</span></label>' +
+			'</div></div>';
 		host.appendChild(panel);
 		if (typeof panel.querySelector !== 'function' || typeof panel.querySelectorAll !== 'function') return panel;
 		var close = panel.querySelector('.inmov-ftth-map-style-panel__close');
@@ -834,19 +867,25 @@
 		Array.prototype.forEach.call(panel.querySelectorAll('[data-map-style]'), function (button) {
 			button.addEventListener('click', function (event) {
 				if (event && event.stopPropagation) event.stopPropagation();
-				var satellite = button.dataset.mapStyle === 'satellite';
+				var styleKey = button.dataset.mapStyle;
+				var satellite = styleKey === 'satellite';
 				map.__inmovFtthAlternateStyle = satellite;
 				Array.prototype.forEach.call(panel.querySelectorAll('[data-map-style]'), function (item) { item.classList.toggle('is-selected', item === button); });
-				try { if (typeof map.setStyle === 'function') map.setStyle(satellite ? alternateMapStyle : defaultMapStyle); } catch (error) {}
+				var styleUrl = styleKey === 'dark' ? darkMapStyle : (satellite ? alternateMapStyle : defaultMapStyle);
+				try { if (typeof map.setStyle === 'function') map.setStyle(styleUrl); } catch (error) {}
 			});
 		});
 		Array.prototype.forEach.call(panel.querySelectorAll('[data-map-layer]'), function (button) {
 			button.addEventListener('click', function (event) {
 				if (event && event.stopPropagation) event.stopPropagation();
-				var enabled = !button.classList.contains('is-on');
-				button.classList.toggle('is-on', enabled); button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-				if (button.dataset.mapLayer === 'routes') setRouteLayerVisibility(map, enabled);
-				if (button.dataset.mapLayer === 'points') applyMapQuickFilter(container, map, enabled ? 'pontos' : 'rotas');
+				var enabled = button.checked !== false;
+				var layerKey = button.dataset.mapLayer;
+				if (layerKey === 'routes') setRouteLayerVisibility(map, enabled);
+				if (layerKey.indexOf('point-') === 0) {
+					map.__inmovFtthPointTypeVisibility = map.__inmovFtthPointTypeVisibility || {};
+					map.__inmovFtthPointTypeVisibility[layerKey.slice(6)] = enabled;
+					applyPointLayerVisibility(map);
+				}
 			});
 		});
 		return panel;
@@ -858,7 +897,7 @@
 		var bar = document.createElement('nav');
 		bar.className = 'inmov-ftth-map-bottom-bar';
 		bar.setAttribute('aria-label', 'Ações do mapa');
-		bar.innerHTML = '<button type="button" class="is-active" data-map-bottom="explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="9" r="2.3" fill="currentColor"/></svg><span>Mapa</span></button>' +
+		bar.innerHTML = '<button type="button" data-map-bottom="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M8 14v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Configurações</span></button>' +
 			'<button type="button" data-map-bottom="legend"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Zm-8 9 8 4 8-4M4 17l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Legenda</span></button>' +
 			'<button type="button" data-map-bottom="refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-13.6-5.7L4 7.7M4 4v3.7h3.7M4 13a8 8 0 0 0 13.6 5.7L20 16.3M20 20v-3.7h-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Atualizar</span></button>';
 		host.appendChild(bar);
@@ -867,7 +906,10 @@
 			button.addEventListener('click', function (event) {
 				if (event && event.stopPropagation) event.stopPropagation();
 				var action = button.dataset.mapBottom;
-				if (action === 'explore') applyMapQuickFilter(container, map, 'tudo');
+				if (action === 'settings') {
+					var panel = host.querySelector('.inmov-ftth-map-style-panel');
+					if (panel) { panel.classList.toggle('is-open'); panel.setAttribute('aria-hidden', panel.classList.contains('is-open') ? 'false' : 'true'); }
+				}
 				if (action === 'legend') {
 					var legend = host.querySelector('.inmov-ftth-map-legend');
 					if (legend) legend.classList.toggle('is-hidden');
@@ -882,6 +924,7 @@
 		controlsAdded.add(container);
 		updateMapLoading(container, map, {});
 		var nativeLocationControl = false;
+		var refreshMapData = null;
 		try {
 			if (typeof window.mapboxgl.NavigationControl === 'function') map.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
 			var globeControl = {
@@ -914,6 +957,12 @@
 					positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true
 				});
 				map.addControl(geolocateControl, 'top-right');
+				var geolocateContainer = geolocateControl._container;
+				if (!geolocateContainer && container && container.querySelector) {
+					var geolocateButton = container.querySelector('.mapboxgl-ctrl-geolocate');
+					geolocateContainer = geolocateButton && geolocateButton.parentNode;
+				}
+				if (geolocateContainer && geolocateContainer.classList) geolocateContainer.classList.add('inmov-ftth-geolocate-control');
 				nativeLocationControl = true;
 				map.__inmovFtthGeolocateControl = geolocateControl;
 			}
@@ -954,12 +1003,15 @@
 					this._button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-13.6-5.7L4 7.7M4 4v3.7h3.7M4 13a8 8 0 0 0 13.6 5.7L20 16.3M20 20v-3.7h-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 					this._button.addEventListener('click', function (event) {
 						if (event && event.stopPropagation) event.stopPropagation();
-						this.classList.add('is-loading');
-						routeData = null;
-						requestPromise = null;
-						fetchRoutes().then(function (data) {
-							if (data && mapInstance.getSource && mapInstance.getSource(sourceId) && mapInstance.getSource(sourceId).setData) mapInstance.getSource(sourceId).setData(data);
-						}).finally(function () { window.setTimeout(function () { this.classList.remove('is-loading'); }.bind(this), 350); }.bind(this));
+						if (typeof mapInstance.__inmovFtthRefreshData === 'function') mapInstance.__inmovFtthRefreshData(this);
+						else {
+							this.classList.add('is-loading');
+							routeData = null;
+							requestPromise = null;
+							fetchRoutes().then(function (data) {
+								if (data && mapInstance.getSource && mapInstance.getSource(sourceId) && mapInstance.getSource(sourceId).setData) mapInstance.getSource(sourceId).setData(data);
+							}).finally(function () { window.setTimeout(function () { this.classList.remove('is-loading'); }.bind(this), 350); }.bind(this));
+						}
 					}.bind(this._button));
 					this._container.appendChild(this._button);
 					return this._container;
@@ -1071,6 +1123,24 @@
 			if (selector) { var trigger = document.querySelector(selector); if (trigger && typeof trigger.click === 'function') trigger.click(); }
 		});
 		var records = markerRecords(container);
+		refreshMapData = function (button) {
+			if (button && button.classList) button.classList.add('is-loading');
+			updateMapLoading(container, map, { routes: true, points: !!config.pointsEndpoint, error: '' });
+			routeData = null;
+			requestPromise = null;
+			var routeRequest = fetchRoutes().then(function (data) {
+				if (data && map.getSource && map.getSource(sourceId) && map.getSource(sourceId).setData) map.getSource(sourceId).setData(data);
+				updateMapLoading(container, map, { routes: false });
+				return data;
+			}).catch(function () { updateMapLoading(container, map, { routes: false }); return null; });
+			var pointRequest = !config.pointsEndpoint || typeof window.fetch !== 'function' ? Promise.resolve() : window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
+				.then(function (response) { return response.ok ? response.json() : []; })
+				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } updateMapLoading(container, map, { points: false }); })
+				.catch(function () { updateMapLoading(container, map, { points: false }); });
+			Promise.all([routeRequest, pointRequest]).finally(function () { if (button && button.classList) window.setTimeout(function () { button.classList.remove('is-loading'); }, 350); });
+		};
+		map.__inmovFtthRefreshData = refreshMapData;
+		if (!map.__inmovFtthRefreshTimer && typeof window.setInterval === 'function') map.__inmovFtthRefreshTimer = window.setInterval(function () { if (document.hidden) return; refreshMapData(); }, 60000);
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
@@ -1091,7 +1161,13 @@
 			found.slice(0, 8).forEach(function (item) {
 				var point = markerCoordinates(item); if (!point) return;
 				var button = document.createElement('button'); button.type = 'button';
-				button.textContent = item.title || item.name || item.label || item.post_title || 'Ponto da rede';
+				button.className = 'inmov-ftth-point-search__result';
+				var visual = pointVisual(item);
+				var icon = document.createElement('i'); icon.className = 'inmov-ftth-point-search__result-icon'; icon.style.setProperty('--result-color', visual.data.color); icon.textContent = visual.data.glyph;
+				var content = document.createElement('span'); content.className = 'inmov-ftth-point-search__result-content';
+				var title = document.createElement('strong'); title.textContent = item.title || item.name || item.label || item.post_title || 'Ponto da rede';
+				var meta = document.createElement('small'); meta.textContent = (item.code ? '#' + item.code + ' · ' : '') + (item.locality || 'Localidade não informada');
+				content.appendChild(title); content.appendChild(meta); button.appendChild(icon); button.appendChild(content);
 				button.addEventListener('click', function () {
 					map.flyTo({ center: point, zoom: getDetailZoom(map, point[1]), essential: true });
 					var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
@@ -1261,6 +1337,11 @@
 			// The map may already have been removed by Elementor/JetEngine.
 		}
 		removeLayerEvents(record);
+		if (record.map.__inmovFtthRefreshTimer) {
+			window.clearInterval(record.map.__inmovFtthRefreshTimer);
+			record.map.__inmovFtthRefreshTimer = null;
+			record.map.__inmovFtthRefreshData = null;
+		}
 		if (record.resizeObserver) record.resizeObserver.disconnect();
 		if (record.resizeTimer) window.clearTimeout(record.resizeTimer);
 		if (record.renderTimer) window.clearTimeout(record.renderTimer);

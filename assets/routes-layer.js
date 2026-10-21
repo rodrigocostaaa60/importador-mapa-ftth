@@ -439,6 +439,25 @@
 			var flyOptions = { center: target, zoom: zoom, offset: inventoryOpen ? [0, 0] : offset, padding: 0, duration: options.duration !== undefined ? options.duration : 450, essential: options.essential !== false };
 			if (inventoryOpen && typeof map.jumpTo === 'function' && typeof map.project === 'function' && typeof map.panBy === 'function') {
 				try {
+					/* Inventory centering uses an immediate jump followed by a precise
+					 * vertical correction. Avoid restarting that pair when the same item
+					 * is tapped again while it is already at the visible midpoint; doing
+					 * so creates the small screen tremor users perceive as a second jump. */
+					var activeInventoryPanel = getActiveMapPanel();
+					var currentMapRect = container && container.getBoundingClientRect ? container.getBoundingClientRect() : null;
+					if (activeInventoryPanel && currentMapRect && currentMapRect.width > 0 && currentMapRect.height > 0) {
+						var currentSearch = document.querySelector('.inmov-ftth-point-search');
+						var currentTop = currentSearch && currentSearch.getBoundingClientRect ? Math.max(8, currentSearch.getBoundingClientRect().bottom - currentMapRect.top + 8) : 8;
+						var currentBottom = activeInventoryPanel.getBoundingClientRect ? Math.min(currentMapRect.height - 8, activeInventoryPanel.getBoundingClientRect().top - currentMapRect.top - 8) : currentMapRect.height - 8;
+						if (currentBottom > currentTop) {
+							var currentPoint = map.project({ lng: target[0], lat: target[1] });
+							var desiredX = currentMapRect.width / 2;
+							var desiredY = (currentTop + currentBottom) / 2;
+							var currentZoom = typeof map.getZoom === 'function' ? Number(map.getZoom()) : Number(zoom);
+							var zoomMatches = !Number.isFinite(currentZoom) || Math.abs(currentZoom - Number(zoom)) < 0.02;
+							if (zoomMatches && Math.abs(currentPoint.x - desiredX) < 6 && Math.abs(currentPoint.y - desiredY) < 6) return;
+						}
+					}
 					map.jumpTo({ center: target, zoom: zoom, padding: 0, essential: options.essential !== false });
 					var correctInventoryPosition = function () {
 						if (map.__inmovFtthFocusState !== focusState || !container || !container.getBoundingClientRect) return;
@@ -1504,7 +1523,7 @@
 			'<div class="inmov-ftth-map-sheet__footer">' +
 				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="center">⌾ <span>Centralizar</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action is-hidden" data-sheet-action="copy-coordinates">▣ <span>Copiar coordenadas</span></button>' +
-				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="route" aria-label="Abrir rota no Google Maps">🚗 <span>Rotas</span></button>' +
+			'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="route" aria-label="Abrir rota no Google Maps"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a3 3 0 1 1 0-6h7a3 3 0 1 0 0-6h-1m0 0 3-3m-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="16" r="1.35" fill="currentColor"/></svg><span>Rotas</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit" data-sheet-action="edit">✎ <span>Editar</span></button>' +
 			'</div>';
 		container.parentNode.appendChild(sheet);

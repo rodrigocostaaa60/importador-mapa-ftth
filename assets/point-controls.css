@@ -129,7 +129,7 @@
 	content:"⌕";
 	position:absolute;
 	left:18px;
-	top:50%;
+	top:31px;
 	z-index:1;
 	transform:translateY(-52%);
 	color:#7890aa;
@@ -140,7 +140,7 @@
 	content:"/";
 	position:absolute;
 	right:17px;
-	top:50%;
+	top:31px;
 	transform:translateY(-50%);
 	padding:2px 6px;
 	border:1px solid #e5eaf2;
@@ -364,6 +364,7 @@
 .inmov-ftth-map-shell .inmov-ftth-map-style-choice i.is-standard{background-image:url('map-previews/padrao.jpg')}
 .inmov-ftth-map-shell .inmov-ftth-map-style-choice i.is-satellite{background-image:url('map-previews/satelite.jpg')}
 .inmov-ftth-map-shell .inmov-ftth-map-style-choice i.is-dark{background-image:url('map-previews/escuro.jpg')}
+.inmov-ftth-map-shell .inmov-ftth-map-style-choice i{width:100%;height:auto;aspect-ratio:1/1}
 .inmov-ftth-map-style-panel__handle,.inmov-ftth-map-inventory-panel__handle{display:none}
 .inmov-ftth-map-shell .inmov-ftth-refresh-notice{position:absolute;left:16px;top:72px;z-index:2250;display:flex;align-items:center;gap:7px;max-width:min(330px,calc(100% - 32px));padding:7px 10px;border:1px solid #dbe4ef;border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 4px 14px rgba(15,23,42,.14);color:#475569;font:650 11px/1.2 Inter,ui-sans-serif,system-ui,sans-serif;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .16s ease,transform .16s ease}
 .inmov-ftth-map-shell .inmov-ftth-refresh-notice.is-visible{opacity:1;transform:translateY(0);pointer-events:auto}
@@ -373,7 +374,7 @@
 .inmov-ftth-refresh-notice__icon{display:grid;place-items:center;width:15px;height:15px;border-radius:50%;background:#ef4444;color:#fff;font-size:10px;font-weight:800}
 .inmov-ftth-map-shell .inmov-ftth-refresh-notice.is-success .inmov-ftth-refresh-notice__icon{background:#16a34a}
 .inmov-ftth-refresh-notice button{margin-left:auto;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;font-size:17px;line-height:1;cursor:pointer}
-.inmov-ftth-map-inventory-panel{position:absolute;right:0;bottom:0;left:0;z-index:5350;display:flex;flex-direction:column;max-height:50%;min-height:0;border-radius:24px 24px 0 0;background:#fff;box-shadow:0 -12px 40px rgba(15,23,42,.24);opacity:0;transform:translateY(105%);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
+.inmov-ftth-map-inventory-panel{position:absolute;right:0;bottom:0;left:0;z-index:4600;display:flex;flex-direction:column;max-height:50%;min-height:0;border-radius:24px 24px 0 0;background:#fff;box-shadow:0 -12px 40px rgba(15,23,42,.24);opacity:0;transform:translateY(105%);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
 .inmov-ftth-map-inventory-panel.is-open{opacity:1;transform:translateY(0);pointer-events:auto}
 .inmov-ftth-map-inventory-panel.is-expanded{max-height:calc(100% - 12px)}
 .inmov-ftth-map-inventory-panel__head{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;padding:12px 18px 9px;color:#0f172a;font:750 16px/1.2 Inter,ui-sans-serif,system-ui,sans-serif;border-bottom:1px solid #eef2f7}
@@ -391,9 +392,9 @@
 .inmov-ftth-map-inventory-panel h4{margin:0 0 2px;font-size:19px}
 
 @media(max-width:767px){
- .inmov-ftth-map-shell .inmov-ftth-point-search:before{top:50%;transform:translateY(-50%);line-height:1}
+ .inmov-ftth-map-shell .inmov-ftth-point-search:before{top:31px;transform:translateY(-50%);line-height:1}
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right{bottom:92px}
- .inmov-ftth-map-shell .inmov-ftth-map-style-panel{right:0;bottom:0;left:0;width:100%;max-height:50%;padding:0;border:0;border-radius:24px 24px 0 0;overflow:hidden;box-shadow:0 -12px 40px rgba(15,23,42,.24);transform:translateY(105%)}
+ .inmov-ftth-map-shell .inmov-ftth-map-style-panel{right:0;bottom:0;left:0;width:100%;max-height:calc(100% - 12px);padding:0;border:0;border-radius:24px 24px 0 0;overflow-y:auto;overflow-x:hidden;box-shadow:0 -12px 40px rgba(15,23,42,.24);transform:translateY(105%)}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel.is-open{transform:translateY(0)}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel.is-expanded{max-height:calc(100% - 12px)}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel__handle,.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__handle{display:flex;justify-content:center;flex:0 0 auto;padding:9px 0 1px}
@@ -402,7 +403,15 @@
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel__section{margin:0;padding:13px 14px 0}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel__section:last-child{overflow:auto;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel__styles{gap:8px}
- .inmov-ftth-map-shell .inmov-ftth-map-style-choice i{height:56px;border-radius:9px}
+ .inmov-ftth-map-shell .inmov-ftth-map-style-choice i{width:100%;height:auto;aspect-ratio:1/1;border-radius:9px}
  .inmov-ftth-map-shell .inmov-ftth-refresh-notice{left:10px;top:64px;max-width:calc(100% - 20px)}
+ .inmov-ftth-map-shell .inmov-ftth-refresh-notice{left:50%;top:76px;max-width:calc(100% - 20px);transform:translate(-50%,-4px)}
+ .inmov-ftth-map-shell .inmov-ftth-refresh-notice.is-visible{transform:translate(-50%,0)}
+ .inmov-ftth-map-shell:has(.inmov-ftth-map-legend:not(.is-hidden)) .inmov-ftth-refresh-notice{top:142px}
  .inmov-ftth-map-shell.inmov-ftth-map-shell--inventory-open .inmov-ftth-map-bottom-bar,.inmov-ftth-map-shell.inmov-ftth-map-shell--panel-open .inmov-ftth-map-bottom-bar{opacity:0;transform:translateY(120%);pointer-events:none}
 }
+
+.inmov-ftth-map-shell .inmov-ftth-map-style-panel__checklist label:last-child{grid-column:1/-1}
+.inmov-ftth-map-shell .inmov-ftth-map-style-panel__checklist label:last-child>i{--check-color:#7c3aed;width:28px;height:22px}
+.inmov-ftth-map-shell .inmov-ftth-map-style-panel.is-dragging,.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel.is-dragging,.inmov-ftth-map-shell .inmov-ftth-map-sheet.is-dragging{transition:none;user-select:none}
+.inmov-ftth-map-shell .inmov-ftth-map-style-panel__handle,.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__handle,.inmov-ftth-map-shell .inmov-ftth-map-sheet__handle{touch-action:none;cursor:grab}

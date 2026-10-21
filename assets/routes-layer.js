@@ -340,9 +340,10 @@
 		if (!window.matchMedia || !window.matchMedia('(max-width: 767px)').matches) return [0, 0];
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
-		if (!container || !sheet || !container.getBoundingClientRect) return [0, 0];
+		var panel = sheet || document.querySelector('.inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+		if (!container || !panel || !container.getBoundingClientRect) return [0, 0];
 		var mapRect = container.getBoundingClientRect();
-		var sheetRect = sheet.getBoundingClientRect();
+		var sheetRect = panel.getBoundingClientRect();
 		var search = document.querySelector('.inmov-ftth-point-search');
 		var searchBottom = search && search.getBoundingClientRect ? search.getBoundingClientRect().bottom - mapRect.top : 0;
 		var visibleTop = Math.max(8, searchBottom + 8);
@@ -607,6 +608,7 @@
 	function openSheet(map, title, rows, center, options) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
+		hideMapSearch(map);
 		options = options || {};
 		var visual = sheetTypeVisual(options.kind || 'point', options.type || '', options.color || '');
 		var status = normalizeSheetStatus(options.status);
@@ -756,6 +758,65 @@
 		return host && host.classList && host.classList.contains('inmov-ftth-map-shell') ? host : host;
 	}
 
+	function hideMapSearch(map) {
+		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
+		var host = container && container.parentNode;
+		var results = host && host.querySelector ? host.querySelector('.inmov-ftth-point-search__results') : null;
+		if (results) results.innerHTML = '';
+		if (host) host.__inmovFtthSearchResultsOpen = false;
+	}
+
+	function bindBottomSheetDrag(panel, handle) {
+		if (!panel || !handle || typeof handle.addEventListener !== 'function') return;
+		var startY = 0;
+		var lastY = 0;
+		var moved = false;
+		var finish = function (event) {
+			if (!moved) return;
+			var delta = lastY - startY;
+			if (event && event.preventDefault) event.preventDefault();
+			panel.__inmovFtthSuppressHandleClick = true;
+			if (delta < -32) panel.classList.add('is-expanded');
+			else if (delta > 32) {
+				if (panel.classList.contains('is-expanded')) panel.classList.remove('is-expanded');
+				else {
+					panel.classList.remove('is-open');
+					panel.setAttribute('aria-hidden', 'true');
+					var shell = panel.closest && panel.closest('.inmov-ftth-map-shell');
+					if (shell && shell.classList) { shell.classList.remove('inmov-ftth-map-shell--sheet-open', 'inmov-ftth-map-shell--panel-open', 'inmov-ftth-map-shell--inventory-open'); }
+					if (panel.classList.contains('inmov-ftth-map-sheet')) { clearPointSelection(); clearRouteSelection(); }
+				}
+			}
+			panel.classList.remove('is-dragging');
+			window.setTimeout(function () { panel.__inmovFtthSuppressHandleClick = false; }, 0);
+			moved = false;
+		};
+		handle.addEventListener('pointerdown', function (event) {
+			startY = lastY = Number(event.clientY) || 0;
+			moved = false;
+			panel.classList.add('is-dragging');
+			if (handle.setPointerCapture && event.pointerId !== undefined) { try { handle.setPointerCapture(event.pointerId); } catch (error) {} }
+		});
+		handle.addEventListener('pointermove', function (event) {
+			if (!panel.classList.contains('is-dragging')) return;
+			lastY = Number(event.clientY) || lastY;
+			if (Math.abs(lastY - startY) > 8) moved = true;
+		});
+		handle.addEventListener('pointerup', finish);
+		handle.addEventListener('pointercancel', finish);
+	}
+
+	function getMapFitPadding(map) {
+		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
+		if (!container || !container.getBoundingClientRect) return { top: 24, right: 24, bottom: 24, left: 24 };
+		var mapRect = container.getBoundingClientRect();
+		var search = document.querySelector('.inmov-ftth-point-search');
+		var top = search && search.getBoundingClientRect ? Math.max(24, search.getBoundingClientRect().bottom - mapRect.top + 18) : 24;
+		var panel = document.querySelector('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+		var bottom = panel && panel.getBoundingClientRect ? Math.max(24, mapRect.bottom - panel.getBoundingClientRect().top + 18) : 24;
+		return { top: top, right: 24, bottom: bottom, left: 24 };
+	}
+
 	function setRouteLayerVisibility(map, visible) {
 		if (!map || typeof map.setLayoutProperty !== 'function') return;
 		[layerId, hitLayerId, highlightLayerId].forEach(function (id) {
@@ -858,7 +919,7 @@
 			'<label><input type="checkbox" data-map-layer="point-loja" checked><i class="is-loja">⌂</i><span>Lojas / sedes</span></label>' +
 			'<label><input type="checkbox" data-map-layer="point-poste" checked><i class="is-poste">│</i><span>Postes</span></label>' +
 			'<label><input type="checkbox" data-map-layer="point-outro" checked><i class="is-outro">•</i><span>Outros pontos</span></label>' +
-			'<label><input type="checkbox" data-map-layer="legend"><i class="is-legend">≡</i><span>Legenda técnica</span></label>' +
+			'<label><input type="checkbox" data-map-layer="legend"><i class="is-legend">≡</i><span>Ativar / desativar legenda técnica</span></label>' +
 			'</div></div>';
 		host.appendChild(panel);
 		if (typeof panel.querySelector !== 'function' || typeof panel.querySelectorAll !== 'function') return panel;
@@ -866,7 +927,7 @@
 		var closePanel = function () { panel.classList.remove('is-open', 'is-expanded'); panel.setAttribute('aria-hidden', 'true'); if (host.classList) host.classList.remove('inmov-ftth-map-shell--panel-open'); };
 		if (close) close.addEventListener('click', closePanel);
 		var panelHandle = panel.querySelector('.inmov-ftth-map-style-panel__handle');
-		if (panelHandle) panelHandle.addEventListener('click', function () { panel.classList.toggle('is-expanded'); });
+		if (panelHandle) { panelHandle.addEventListener('click', function () { if (panel.__inmovFtthSuppressHandleClick) return; panel.classList.toggle('is-expanded'); }); bindBottomSheetDrag(panel, panelHandle); }
 		Array.prototype.forEach.call(panel.querySelectorAll('[data-map-style]'), function (button) {
 			button.addEventListener('click', function (event) {
 				if (event && event.stopPropagation) event.stopPropagation();
@@ -948,13 +1009,23 @@
 		var closePanel = function () { panel.classList.remove('is-open', 'is-expanded'); panel.setAttribute('aria-hidden', 'true'); if (host.classList) host.classList.remove('inmov-ftth-map-shell--inventory-open'); };
 		if (close) close.addEventListener('click', closePanel);
 		var handle = panel.querySelector('.inmov-ftth-map-inventory-panel__handle');
-		if (handle) handle.addEventListener('click', function () { panel.classList.toggle('is-expanded'); });
+		if (handle) { handle.addEventListener('click', function () { if (panel.__inmovFtthSuppressHandleClick) return; panel.classList.toggle('is-expanded'); }); bindBottomSheetDrag(panel, handle); }
 		function cityKey(value) { return localityClusterInfo(value).key; }
 		function recordsForCity(city) {
 			return (getRecords() || []).filter(function (item) { return cityKey(item.locality || item.cidade || item.city || item.municipio) === city.key; });
 		}
 		function routesForCity(city) {
 			return routeData && Array.isArray(routeData.features) ? routeData.features.filter(function (feature) { return cityKey(feature.properties && feature.properties.locality) === city.key; }) : [];
+		}
+		function routeCoordinates(feature) {
+			var result = [];
+			function walk(value) { if (!Array.isArray(value)) return; if (value.length >= 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) { result.push([Number(value[0]), Number(value[1])]); return; } value.forEach(walk); }
+			walk(feature && feature.geometry && feature.geometry.coordinates);
+			return result;
+		}
+		function routeFiberCount(feature) {
+			var properties = feature && feature.properties || {};
+			return Number(properties.fibers || properties.ftthFiberCount) || 0;
 		}
 		function cities() {
 			var result = {};
@@ -968,7 +1039,17 @@
 				if (!result[info.key]) result[info.key] = { key: info.key, label: info.label, points: 0, routes: 0 };
 				result[info.key].routes++;
 			});
-			return Object.keys(result).map(function (key) { return result[key]; }).sort(function (a, b) { return a.label.localeCompare(b.label, 'pt-BR'); });
+			return Object.keys(result).map(function (key) { return result[key]; }).sort(function (a, b) { return (b.points + b.routes) - (a.points + a.routes) || a.label.localeCompare(b.label, 'pt-BR'); });
+		}
+		function fitCity(city) {
+			var coords = recordsForCity(city).map(markerCoordinates).filter(Boolean);
+			routesForCity(city).forEach(function (feature) { coords = coords.concat(routeCoordinates(feature)); });
+			if (!coords.length) return;
+			if (typeof map.fitBounds === 'function' && coords.length > 1) {
+				var minLng = coords.reduce(function (v, item) { return Math.min(v, item[0]); }, Infinity), maxLng = coords.reduce(function (v, item) { return Math.max(v, item[0]); }, -Infinity);
+				var minLat = coords.reduce(function (v, item) { return Math.min(v, item[1]); }, Infinity), maxLat = coords.reduce(function (v, item) { return Math.max(v, item[1]); }, -Infinity);
+				map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: getMapFitPadding(map), maxZoom: 14, duration: 550, essential: true });
+			} else if (typeof map.flyTo === 'function') map.flyTo({ center: coords[0], zoom: 13, offset: getSheetOffset(map), essential: true });
 		}
 		function setPanelOpen(open) {
 			panel.classList.toggle('is-open', open); panel.setAttribute('aria-hidden', open ? 'false' : 'true');
@@ -997,16 +1078,23 @@
 			panel.__inmovFtthInventoryCity = city;
 			var points = recordsForCity(city), routes = routesForCity(city), categories = {};
 			points.forEach(function (item) { var type = normalizePointType(item.type); var visual = pointVisuals[type] || pointVisuals.outro; var key = 'point:' + type; if (!categories[key]) categories[key] = { key: key, label: visual.label, color: visual.color, count: 0, kind: 'point', type: type }; categories[key].count++; });
-			routes.forEach(function (feature) { var fibers = Number(feature.properties && feature.properties.fibers) || 0; var key = 'route:' + (fibers || 'outro'); if (!categories[key]) categories[key] = { key: key, label: fibers ? 'Fibra ' + fibers + 'FO' : 'Cabos', color: (feature.properties && feature.properties.color) || '#2563eb', count: 0, kind: 'route', fibers: fibers }; categories[key].count++; });
-			body.innerHTML = '<button type="button" class="inmov-ftth-map-inventory-panel__back">‹ Todas as cidades</button><h4>' + city.label + '</h4><p class="inmov-ftth-map-inventory-panel__hint">Categorias disponíveis nesta localidade.</p>';
+			routes.forEach(function (feature) { var key = 'route:all'; if (!categories[key]) categories[key] = { key: key, label: 'Fibras e rotas', color: (feature.properties && (feature.properties.ftthColor || feature.properties.color)) || '#2563eb', count: 0, kind: 'route' }; categories[key].count++; });
+			body.innerHTML = '<button type="button" data-inventory-back="cities" class="inmov-ftth-map-inventory-panel__back">‹ Todas as cidades</button><h4>' + city.label + '</h4><p class="inmov-ftth-map-inventory-panel__hint">Categorias disponíveis nesta localidade.</p>';
 			Object.keys(categories).map(function (key) { return categories[key]; }).sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'); }).forEach(function (category) {
 				var button = document.createElement('button'); button.type = 'button'; button.className = 'inmov-ftth-map-inventory-category'; button.dataset.category = category.key; button.innerHTML = '<i style="--inventory-color:' + category.color + '">' + (category.kind === 'route' ? '━' : (pointVisuals[category.type] || pointVisuals.outro).glyph) + '</i><span>' + category.label + '</span><b>' + category.count + '</b>'; body.appendChild(button);
 			});
 		}
 		function renderCategory(city, categoryKey) {
 			panel.__inmovFtthInventoryCity = city;
-			var isRoute = categoryKey.indexOf('route:') === 0, items = isRoute ? routesForCity(city).filter(function (feature) { var fibers = Number(feature.properties && feature.properties.fibers) || 0; return categoryKey === 'route:' + (fibers || 'outro'); }) : recordsForCity(city).filter(function (item) { return 'point:' + normalizePointType(item.type) === categoryKey; });
-			body.innerHTML = '<button type="button" class="inmov-ftth-map-inventory-panel__back">‹ ' + city.label + '</button><h4>' + (isRoute ? categoryKey.replace('route:', 'Fibra ') : (pointVisuals[categoryKey.replace('point:', '')] || pointVisuals.outro).label) + '</h4>';
+			var isRoute = categoryKey.indexOf('route:') === 0, items = isRoute && categoryKey !== 'route:all' ? routesForCity(city).filter(function (feature) { var fibers = routeFiberCount(feature); return categoryKey === 'route:' + (fibers || 'outro'); }) : recordsForCity(city).filter(function (item) { return 'point:' + normalizePointType(item.type) === categoryKey; });
+			if (categoryKey === 'route:all') {
+				var fiberGroups = {};
+				routesForCity(city).forEach(function (feature) { var fibers = routeFiberCount(feature); var key = 'route:' + (fibers || 'outro'); if (!fiberGroups[key]) fiberGroups[key] = { key: key, label: fibers ? 'Fibra ' + fibers + 'FO' : 'Outras fibras', count: 0, color: (feature.properties && (feature.properties.ftthColor || feature.properties.color)) || '#2563eb' }; fiberGroups[key].count++; });
+				body.innerHTML = '<button type="button" data-inventory-back="city" class="inmov-ftth-map-inventory-panel__back">‹ ' + city.label + '</button><h4>Fibras e rotas</h4><p class="inmov-ftth-map-inventory-panel__hint">Escolha uma capacidade para ver as rotas.</p>';
+				Object.keys(fiberGroups).map(function (key) { return fiberGroups[key]; }).sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'); }).forEach(function (group) { var button = document.createElement('button'); button.type = 'button'; button.className = 'inmov-ftth-map-inventory-category'; button.dataset.category = group.key; button.innerHTML = '<i style="--inventory-color:' + group.color + '">━</i><span>' + group.label + '</span><b>' + group.count + '</b>'; body.appendChild(button); });
+				return;
+			}
+			body.innerHTML = '<button type="button" data-inventory-back="city" class="inmov-ftth-map-inventory-panel__back">‹ ' + city.label + '</button><h4>' + (isRoute ? categoryKey.replace('route:', 'Fibra ') : (pointVisuals[categoryKey.replace('point:', '')] || pointVisuals.outro).label) + '</h4>';
 			items.sort(function (a, b) { var av = isRoute ? String(a.properties && a.properties.name || '') : String(a.name || a.code || ''); var bv = isRoute ? String(b.properties && b.properties.name || '') : String(b.name || b.code || ''); return av.localeCompare(bv, 'pt-BR'); }).forEach(function (item) {
 				var button = document.createElement('button'); button.type = 'button'; button.className = 'inmov-ftth-map-inventory-item'; button.dataset.inventoryAction = 'center'; button.dataset.inventoryKind = isRoute ? 'route' : 'point';
 				if (isRoute) { button.dataset.routeId = String(item.id || ''); button.innerHTML = '<span><strong>' + String(item.properties && item.properties.name || 'Rota de fibra') + '</strong><small>#' + String(item.id || '') + '</small></span><b>⌾</b>'; }
@@ -1017,12 +1105,12 @@
 		body.addEventListener('click', function (event) {
 			var target = event.target && event.target.closest ? event.target.closest('button') : null;
 			if (!target) return;
-			if (target.classList.contains('inmov-ftth-map-inventory-panel__back')) { renderCityList(); return; }
-			if (target.dataset.city) { var city = cities().find(function (item) { return item.key === target.dataset.city; }); if (city) renderCity(city); return; }
+			if (target.classList.contains('inmov-ftth-map-inventory-panel__back')) { if (target.dataset.inventoryBack === 'city' && panel.__inmovFtthInventoryCity) renderCity(panel.__inmovFtthInventoryCity); else renderCityList(); return; }
+			if (target.dataset.city) { var city = cities().find(function (item) { return item.key === target.dataset.city; }); if (city) { fitCity(city); renderCity(city); } return; }
 			if (target.dataset.category) { var city = panel.__inmovFtthInventoryCity; if (city) renderCategory(city, target.dataset.category); return; }
 			if (target.dataset.inventoryAction === 'center') {
 				if (target.dataset.inventoryKind === 'point') centerPoint((getRecords() || []).find(function (item) { return String(item.id) === target.dataset.itemId; }), false);
-				else { var feature = routeData && routeData.features && routeData.features.find(function (item) { return String(item.id) === target.dataset.routeId; }); var coords = feature && feature.geometry && feature.geometry.coordinates && feature.geometry.coordinates[0]; if (coords && map.flyTo) map.flyTo({ center: coords, zoom: getDetailZoom(map, coords[1]), essential: true }); }
+				else { var feature = routeData && routeData.features && routeData.features.find(function (item) { return String(item.id) === target.dataset.routeId; }); var routeCoords = routeCoordinates(feature); var coords = routeCoords[0]; if (coords && map.flyTo) map.flyTo({ center: coords, zoom: getDetailZoom(map, coords[1]), offset: getSheetOffset(map), essential: true }); }
 			}
 		});
 		panel.__inmovFtthRender = renderCityList;
@@ -1191,16 +1279,17 @@
 				map.__inmovFtthMapMoved = false;
 				if (moved) return;
 				var originalTarget = event && event.originalEvent && event.originalEvent.target;
+				hideMapSearch(map);
 				var isInteractive = originalTarget && originalTarget.closest && originalTarget.closest('.jet-map-marker, .mapboxgl-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-map-sheet');
 				if (isInteractive) return;
 				var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
-				if (sheet && sheet.classList) { sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); var shell = sheet.closest && sheet.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.remove('inmov-ftth-map-shell--sheet-open'); }
+				if (sheet && sheet.classList) { sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); var shell = sheet.closest && sheet.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.remove('inmov-ftth-map-shell--sheet-open'); clearPointSelection(); clearRouteSelection(); return; }
 				var stylePanel = document.querySelector('.inmov-ftth-map-style-panel.is-open');
-				if (stylePanel && stylePanel.classList) { stylePanel.classList.remove('is-open', 'is-expanded'); stylePanel.setAttribute('aria-hidden', 'true'); var styleShell = stylePanel.closest && stylePanel.closest('.inmov-ftth-map-shell'); if (styleShell && styleShell.classList) styleShell.classList.remove('inmov-ftth-map-shell--panel-open'); }
+				if (stylePanel && stylePanel.classList) { stylePanel.classList.remove('is-open', 'is-expanded'); stylePanel.setAttribute('aria-hidden', 'true'); var styleShell = stylePanel.closest && stylePanel.closest('.inmov-ftth-map-shell'); if (styleShell && styleShell.classList) styleShell.classList.remove('inmov-ftth-map-shell--panel-open'); return; }
 				var inventoryPanel = document.querySelector('.inmov-ftth-map-inventory-panel.is-open');
-				if (inventoryPanel && inventoryPanel.classList) { inventoryPanel.classList.remove('is-open', 'is-expanded'); inventoryPanel.setAttribute('aria-hidden', 'true'); var inventoryShell = inventoryPanel.closest && inventoryPanel.closest('.inmov-ftth-map-shell'); if (inventoryShell && inventoryShell.classList) inventoryShell.classList.remove('inmov-ftth-map-shell--inventory-open'); }
-				clearPointSelection();
-				clearRouteSelection();
+				if (inventoryPanel && inventoryPanel.classList) { inventoryPanel.classList.remove('is-open', 'is-expanded'); inventoryPanel.setAttribute('aria-hidden', 'true'); var inventoryShell = inventoryPanel.closest && inventoryPanel.closest('.inmov-ftth-map-shell'); if (inventoryShell && inventoryShell.classList) inventoryShell.classList.remove('inmov-ftth-map-shell--inventory-open'); return; }
+				var legend = document.querySelector('.inmov-ftth-map-legend:not(.is-hidden)');
+				if (legend && legend.classList) legend.classList.add('is-hidden');
 			});
 			map.on('moveend', function () { updateMarkerVisibility(map); });
 			map.on('move', function () { scheduleMarkerVisibility(map); });
@@ -1250,8 +1339,9 @@
 		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', closeSheet);
 		var handle = sheet.querySelector('.inmov-ftth-map-sheet__handle');
 		if (handle && handle.addEventListener) {
-			handle.addEventListener('click', function () { sheet.classList.toggle('is-expanded'); });
+			handle.addEventListener('click', function () { if (sheet.__inmovFtthSuppressHandleClick) return; sheet.classList.toggle('is-expanded'); });
 			handle.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); sheet.classList.toggle('is-expanded'); } });
+			bindBottomSheetDrag(sheet, handle);
 		}
 		var centerButton = sheet.querySelector('[data-sheet-action="center"]');
 		if (centerButton && centerButton.addEventListener) centerButton.addEventListener('click', function () {
@@ -1295,11 +1385,14 @@
 				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } updateMapLoading(container, map, { points: false }); }).catch(function () { updateMapLoading(container, map, { points: false }); });
 		}
 		var userPosition = null;
+		var searchResultsOpen = false;
+		var mapHost = container.parentNode;
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
 		function render() {
+			if (mapHost && mapHost.__inmovFtthSearchResultsOpen === false) searchResultsOpen = false;
 			var query = input.value.trim().toLowerCase();
 			results.innerHTML = '';
-			if (!query) return;
+			if (!query || !searchResultsOpen) return;
 			var found = records.filter(function (item) { return JSON.stringify(item).toLowerCase().indexOf(query) !== -1; });
 			found.sort(function (a, b) {
 				if (!userPosition) return 0;
@@ -1317,15 +1410,17 @@
 				var meta = document.createElement('small'); meta.textContent = (item.code ? '#' + item.code + ' · ' : '') + (item.locality || 'Localidade não informada');
 				content.appendChild(title); content.appendChild(meta); button.appendChild(icon); button.appendChild(content);
 				button.addEventListener('click', function () {
-					map.flyTo({ center: point, zoom: getDetailZoom(map, point[1]), essential: true });
+					searchResultsOpen = false;
+					map.flyTo({ center: point, zoom: getDetailZoom(map, point[1]), offset: getSheetOffset(map), essential: true });
 					var markerGroup = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
 					if (markerGroup && markerGroup[0] && markerGroup[0].marker && markerGroup[0].marker.getElement) markerGroup[0].marker.getElement().click();
-					results.innerHTML = ''; input.blur();
+					results.innerHTML = ''; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = false; input.blur();
 				});
 				results.appendChild(button);
 			});
 		}
-		input.addEventListener('input', render);
+		input.addEventListener('input', function () { searchResultsOpen = !!input.value.trim(); if (mapHost) mapHost.__inmovFtthSearchResultsOpen = searchResultsOpen; render(); });
+		input.addEventListener('focus', function () { if (input.value.trim()) { searchResultsOpen = true; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = true; render(); } });
 		if (container.addEventListener) container.addEventListener('click', function (event) {
 			var markerElement = event.target && event.target.closest ? event.target.closest('.jet-map-marker') : null;
 			if (!markerElement || typeof map.flyTo !== 'function') return;

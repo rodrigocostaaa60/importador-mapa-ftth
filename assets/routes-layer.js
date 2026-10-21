@@ -1163,10 +1163,15 @@
 		function centerPoint(item, details) {
 			var center = markerCoordinates(item);
 			if (!center) return;
+			var group = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
 			if (details) {
-				var group = window.JetEngineMaps && window.JetEngineMaps.markersData && window.JetEngineMaps.markersData[item.id];
 				if (group && group[0] && group[0].marker && group[0].marker.getElement) group[0].marker.getElement().click();
-			} else focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
+			} else {
+				/* Inventory centering should have the same visual feedback as touching
+				 * the marker, without opening its details sheet. */
+				if (group && group[0] && group[0].marker) selectPointMarker(group[0].marker);
+				focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
+			}
 		}
 		function renderCityList() {
 			panel.__inmovFtthInventoryCity = null;
@@ -1213,7 +1218,20 @@
 			if (target.dataset.category) { var city = panel.__inmovFtthInventoryCity; if (city) renderCategory(city, target.dataset.category); return; }
 			if (target.dataset.inventoryAction === 'center') {
 				if (target.dataset.inventoryKind === 'point') centerPoint((getRecords() || []).find(function (item) { return String(item.id) === target.dataset.itemId; }), false);
-				else { var feature = routeData && routeData.features && routeData.features.find(function (item) { return String(item.id) === target.dataset.routeId; }); var routeCoords = routeCoordinates(feature); var coords = routeCoords[0]; if (coords && map.flyTo) focusMapCoordinate(map, coords, getDetailZoom(map, coords[1])); }
+				else {
+					var feature = routeData && routeData.features && routeData.features.find(function (item) { return String(item.id) === target.dataset.routeId; });
+					var routeCoords = routeCoordinates(feature); var coords = routeCoords[0];
+					if (coords && feature) {
+						clearPointSelection(); clearRouteSelection();
+						var routeId = feature.id;
+						if (routeId === undefined || routeId === null || routeId === '') { var routeProps = feature.properties || {}; routeId = routeProps.ftthRouteId || routeProps._ID || routeProps.id || routeProps.code; }
+						if (routeId !== undefined && routeId !== null && routeId !== '') {
+							selectedRouteRecord = { map: map }; selectedRouteId = String(routeId);
+							try { if (map.getLayer && map.getLayer(highlightLayerId)) map.setFilter(highlightLayerId, ['==', ['id'], selectedRouteId]); } catch (error) {}
+						}
+						focusMapCoordinate(map, coords, getDetailZoom(map, coords[1]));
+					}
+				}
 			}
 		});
 		panel.__inmovFtthRender = renderCityList;

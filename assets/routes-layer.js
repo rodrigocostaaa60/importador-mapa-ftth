@@ -398,13 +398,14 @@
 				var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
 				if (visibleBottom > visibleTop) offset[1] = ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2);
 			}
-			/* During the inventory sheet transition, Mapbox's offset calculation is
-			 * unstable. Use a neutral flyTo there and correct against the final
-			 * panel bounds once the animation has ended. */
+			/* Inventory selections are already made with the sheet open. Do not start
+			 * another animated flight here: the sheet transition and the previous city
+			 * fit can otherwise compete for moveend and leave the item under search. */
 			var flyOptions = { center: target, zoom: zoom, offset: inventoryOpen ? [0, 0] : offset, duration: options.duration !== undefined ? options.duration : 450, essential: options.essential !== false };
-			if (inventoryOpen && typeof map.once === 'function' && typeof map.project === 'function' && typeof map.panBy === 'function') {
+			if (inventoryOpen && typeof map.jumpTo === 'function' && typeof map.project === 'function' && typeof map.panBy === 'function') {
 				try {
-					map.once('moveend', function () {
+					map.jumpTo({ center: target, zoom: zoom, essential: options.essential !== false });
+					var correctInventoryPosition = function () {
 						if (map.__inmovFtthFocusState !== focusState || !container || !container.getBoundingClientRect) return;
 						var mapRect = container.getBoundingClientRect();
 						var search = document.querySelector('.inmov-ftth-point-search');
@@ -417,7 +418,11 @@
 						var deltaY = desiredY - point.y;
 						if (Math.abs(deltaY) < 3 || Math.abs(deltaY) > mapRect.height * 0.9) return;
 						try { map.panBy([0, deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([0, deltaY], { duration: 0 }); } catch (ignored) {} }
-					});
+					};
+					if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(correctInventoryPosition);
+					else if (typeof window.setTimeout === 'function') window.setTimeout(correctInventoryPosition, 0);
+					else correctInventoryPosition();
+					return;
 				} catch (error) {}
 			}
 			try { map.flyTo(flyOptions); } catch (error) {}
@@ -426,7 +431,8 @@
 		 * final bounds in flyTo's offset. This avoids the visible second jump from
 		 * a post-animation pan correction. */
 		if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-			focusState.timers.push(window.setTimeout(startFocus, 240));
+			var focusDelay = document.querySelector('.inmov-ftth-map-inventory-panel.is-open') ? 0 : 240;
+			focusState.timers.push(window.setTimeout(startFocus, focusDelay));
 		} else {
 			startFocus();
 		}

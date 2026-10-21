@@ -336,7 +336,21 @@
 		} catch (error) {}
 	}
 
+	function resetMapShellScroll(map) {
+		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
+		var node = container && container.parentElement;
+		while (node) {
+			if (node.classList && node.classList.contains('inmov-ftth-map-shell')) {
+				if (node.scrollTop) node.scrollTop = 0;
+				return node;
+			}
+			node = node.parentElement;
+		}
+		return null;
+	}
+
 	function getSheetOffset(map) {
+		resetMapShellScroll(map);
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
 		var panel = sheet || document.querySelector('.inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
@@ -360,9 +374,16 @@
 	function focusMapCoordinate(map, center, zoom, options) {
 		if (!map || !Array.isArray(center) || center.length < 2 || typeof map.flyTo !== 'function') return;
 		options = options || {};
+		resetMapShellScroll(map);
 		var target = [Number(center[0]), Number(center[1])];
 		if (!Number.isFinite(target[0]) || !Number.isFinite(target[1])) return;
+		var previous = map.__inmovFtthFocusState;
+		if (previous && Array.isArray(previous.timers) && typeof window !== 'undefined' && typeof window.clearTimeout === 'function') previous.timers.forEach(function (timer) { window.clearTimeout(timer); });
+		var focusState = { token: (previous && previous.token || 0) + 1, timers: [] };
+		map.__inmovFtthFocusState = focusState;
 		var correct = function () {
+			if (map.__inmovFtthFocusState !== focusState) return;
+			resetMapShellScroll(map);
 			if (typeof map.project !== 'function' || typeof map.panBy !== 'function') return;
 			var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
 			if (!container || !container.getBoundingClientRect) return;
@@ -387,8 +408,8 @@
 			try { map.once('moveend', correct); } catch (error) {}
 		}
 		if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-			window.setTimeout(correct, 260);
-			window.setTimeout(correct, 520);
+			focusState.timers.push(window.setTimeout(correct, 260));
+			focusState.timers.push(window.setTimeout(correct, 520));
 		}
 	}
 
@@ -860,6 +881,7 @@
 	}
 
 	function getMapFitPadding(map) {
+		resetMapShellScroll(map);
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		if (!container || !container.getBoundingClientRect) return { top: 24, right: 24, bottom: 24, left: 24 };
 		var mapRect = container.getBoundingClientRect();
@@ -1475,7 +1497,7 @@
 			});
 		}
 		input.addEventListener('input', function () { searchResultsOpen = !!input.value.trim(); if (mapHost) mapHost.__inmovFtthSearchResultsOpen = searchResultsOpen; render(); });
-		input.addEventListener('focus', function () { if (input.value.trim()) { searchResultsOpen = true; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = true; render(); } });
+		input.addEventListener('focus', function () { resetMapShellScroll(map); if (input.value.trim()) { searchResultsOpen = true; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = true; render(); } });
 		if (container.addEventListener) container.addEventListener('click', function (event) {
 			if (document.querySelector('.inmov-ftth-map-sheet.is-open')) return;
 			var markerElement = event.target && event.target.closest ? event.target.closest('.jet-map-marker') : null;

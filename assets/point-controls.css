@@ -275,7 +275,7 @@
 
 /* Composição inspirada no Google Maps: pesquisa, chips, camadas e barra
  * inferior ficam em superfícies independentes, sem cobrir os dados do mapa. */
-.inmov-ftth-map-shell{position:relative;overflow:hidden;background:#eef2f7}
+.inmov-ftth-map-shell{position:relative;overflow:hidden;overflow:clip;background:#eef2f7;overscroll-behavior:none}
 .inmov-ftth-map-shell .inmov-ftth-point-search{position:absolute;left:16px;top:16px;width:min(430px,calc(100% - 32px));margin:0;padding:0;border:0;border-radius:999px;background:#fff;box-shadow:0 3px 14px rgba(15,23,42,.20),0 1px 3px rgba(15,23,42,.10);overflow:hidden}
 .inmov-ftth-map-shell .inmov-ftth-point-search{z-index:2200!important}
 .inmov-ftth-map-shell .inmov-ftth-point-search:before{content:"⌕";left:18px;color:#64748b;font-size:23px}

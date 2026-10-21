@@ -420,7 +420,10 @@
 						var desiredY = (visibleTop + visibleBottom) / 2;
 						var deltaY = desiredY - point.y;
 						if (Math.abs(deltaY) < 3 || Math.abs(deltaY) > mapRect.height * 0.9) return;
-						try { map.panBy([0, deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([0, deltaY], { duration: 0 }); } catch (ignored) {} }
+						/* Mapbox moves the map canvas in the requested direction, so the
+						 * feature moves by the opposite amount. Invert the correction to
+						 * place the item at the calculated midpoint. */
+						try { map.panBy([0, -deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([0, -deltaY], { duration: 0 }); } catch (ignored) {} }
 					};
 					if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(correctInventoryPosition);
 					else if (typeof window.setTimeout === 'function') window.setTimeout(correctInventoryPosition, 0);

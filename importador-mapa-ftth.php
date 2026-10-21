@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.22
+ * Version: 0.10.23
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.22';
+	const VERSION               = '0.10.23';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -334,6 +334,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		<script>
 		(function () {
 			'use strict';
+			if (document.documentElement && document.documentElement.classList) document.documentElement.classList.add('inmov-ftth-map-page');
 			var selector = '.jet-map-listing.mapbox-provider';
 			/* This overlay is created while the document is still being parsed, so
 			 * the user sees an honest loading state before Elementor/JetEngine and
@@ -385,6 +386,10 @@ final class Inmov_JetEngine_FTTH_Importer {
 				});
 			}
 			function start() {
+				/* Lock page-level scrolling on the map view. Individual sheets and
+				 * result lists keep their own overflow so long content remains usable. */
+				if (document.documentElement && document.documentElement.classList) document.documentElement.classList.add('inmov-ftth-map-page');
+				if (document.body && document.body.classList) document.body.classList.add('inmov-ftth-map-page');
 				mount(document);
 				if (window.MutationObserver && document.documentElement) {
 					var observer = new MutationObserver(function (records) {

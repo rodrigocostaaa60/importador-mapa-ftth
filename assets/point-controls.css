@@ -446,3 +446,71 @@
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body{padding:16px 18px calc(28px + env(safe-area-inset-bottom))}
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-city,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item{min-height:62px}
 }
+
+/* Safari/iOS can expose the normal-flow search wrapper as page overflow when
+ * the map shell is narrower than the visual viewport. Keep the document fixed
+ * and allow scrolling only inside the panels that explicitly own a scroller. */
+html.inmov-ftth-map-page,
+body.inmov-ftth-map-page,
+html.inmov-ftth-map-page body{
+ box-sizing:border-box;
+ max-width:100%!important;
+ overflow-x:hidden!important;
+ overflow-y:hidden!important;
+ overscroll-behavior:none!important;
+}
+html.inmov-ftth-map-page *,
+body.inmov-ftth-map-page *{box-sizing:border-box}
+.inmov-ftth-map-shell{
+ box-sizing:border-box!important;
+ width:100%!important;
+ max-width:100%!important;
+ min-width:0!important;
+ overflow:hidden!important;
+ overflow:clip!important;
+ overscroll-behavior:none!important;
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search{
+ position:absolute!important;
+ inset-block-start:16px;
+ inset-inline-start:16px;
+ inset-inline-end:auto;
+ width:min(420px,calc(100% - 32px));
+ max-width:calc(100% - 32px);
+ margin:0!important;
+ box-sizing:border-box!important;
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search input,
+.inmov-ftth-map-shell .inmov-ftth-point-search__results,
+.inmov-ftth-map-shell .inmov-ftth-point-search__results button{
+ box-sizing:border-box!important;
+ max-width:100%;
+}
+.inmov-ftth-map-shell .inmov-ftth-point-search__results{
+ overflow-x:hidden;
+ overflow-y:auto;
+ -webkit-overflow-scrolling:touch;
+ overscroll-behavior:contain;
+}
+.inmov-ftth-map-shell .inmov-ftth-map-sheet__locality{min-width:0}
+.inmov-ftth-map-shell .inmov-ftth-map-sheet__code{
+ min-width:0;
+ max-width:44%;
+ overflow:hidden;
+ text-overflow:ellipsis;
+}
+.inmov-ftth-map-shell .inmov-ftth-map-sheet__body,
+.inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body,
+.inmov-ftth-map-shell .inmov-ftth-map-style-panel{
+ -webkit-overflow-scrolling:touch;
+ overscroll-behavior:contain;
+}
+@media(max-width:767px){
+ .inmov-ftth-map-shell .inmov-ftth-point-search{
+  inset-block-start:10px;
+  inset-inline-start:10px;
+  inset-inline-end:10px;
+  width:auto;
+  max-width:none;
+ }
+}

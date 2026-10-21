@@ -738,6 +738,37 @@
 		} catch (error) {}
 	}
 
+	function openExternalUrl(url) {
+		if (!url || !window) return false;
+		var opened = null;
+		/* A direct window.open keeps the current map untouched. Use a plain
+		 * feature set so browsers do not return a falsey WindowProxy merely
+		 * because noopener was requested, then detach the opener explicitly. */
+		try { opened = window.open(url, '_blank'); } catch (error) {}
+		if (opened) {
+			try { opened.opener = null; } catch (error) {}
+			return true;
+		}
+		/* Some embedded browsers block window.open but still allow a user-clicked
+		 * target=_blank anchor. Never fall back to window.location: the map page
+		 * must remain available when the external destination cannot be opened. */
+		try {
+			var link = document.createElement('a');
+			link.href = url;
+			link.target = '_blank';
+			link.rel = 'noopener noreferrer';
+			link.setAttribute('aria-hidden', 'true');
+			link.style.position = 'fixed';
+			link.style.left = '-9999px';
+			(document.body || document.documentElement).appendChild(link);
+			link.click();
+			window.setTimeout(function () { if (link.parentNode) link.parentNode.removeChild(link); }, 0);
+			return true;
+		} catch (error) {
+			return false;
+		}
+	}
+
 	function openGoogleMapsRoute(center) {
 		if (!center || center.length !== 2) return;
 		var lng = Number(center[0]);
@@ -745,22 +776,11 @@
 		if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 		var coordinates = lat.toFixed(6) + ',' + lng.toFixed(6);
 		var destination = encodeURIComponent(coordinates);
-		var userAgent = String((window.navigator && window.navigator.userAgent) || '');
-		var isAndroid = /Android/i.test(userAgent);
-		var isAppleMobile = /iPhone|iPad|iPod/i.test(userAgent);
-		if (isAndroid) {
-			// Intent nativo abre o app sem substituir a URL da aba do nosso mapa.
-			window.location.href = 'intent://maps.google.com/?daddr=' + destination + '&directionsmode=driving#Intent;scheme=https;package=com.google.android.apps.maps;end';
-			return;
-		}
-		if (isAppleMobile) {
-			window.location.href = 'comgooglemaps://?daddr=' + destination + '&directionsmode=driving';
-			return;
-		}
+		/* Google Maps URLs are universal links: on mobile they hand off to the
+		 * installed app, and otherwise show the web route. Opening this same URL
+		 * in a new context provides the fallback without replacing our map tab. */
 		var url = 'https://www.google.com/maps/dir/?api=1&destination=' + destination + '&travelmode=driving&dir_action=navigate';
-		var opened = null;
-		try { opened = window.open(url, '_blank', 'noopener,noreferrer'); } catch (error) {}
-		if (!opened) window.location.href = url;
+		openExternalUrl(url);
 	}
 
 	function openSheet(map, title, rows, center, options) {
@@ -825,19 +845,61 @@
 		var sheetShell = sheet.closest && sheet.closest('.inmov-ftth-map-shell');
 		if (sheetShell && sheetShell.classList) sheetShell.classList.add('inmov-ftth-map-shell--sheet-open');
 		sheet.setAttribute('aria-hidden', 'false');
-		if (center) focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
+		/* Refreshing an already-open sheet must update its contents without
+		 * starting a second camera animation. The user may have moved the map
+		 * after opening it, and the refresh should never pull the map elsewhere. */
+		if (center && !options.preserveView) focusMapCoordinate(map, center, getDetailZoom(map, center[1]));
 	}
 
-	function openPointSheet(map, id) {
+	function openPointSheet(map, id, renderOptions) {
 		var point = pointRecords[id];
 		if (!point) return;
+		renderOptions = renderOptions || {};
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		var marker = groups && groups[id] && groups[id][0] && groups[id][0].marker;
 		clearRouteSelection();
 		selectPointMarker(marker);
 		var updated = point.updatedAt ? point.updatedAt + (point.updatedBy ? ' por ' + point.updatedBy : '') : '';
 		var coordinates = Number(point.lat).toFixed(6) + ', ' + Number(point.lng).toFixed(6);
-		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço técnico', point.address], ['Coordenadas', coordinates], ['Capacidade', point.capacity ? point.capacity + ' portas' : ''], ['Última atualização', updated], ['Observações', point.observation]], [point.lng, point.lat], { kind: 'point', id: point.id, type: point.type, status: point.status, code: point.code, locality: point.locality });
+		openSheet(map, point.name || point.code, [['Código', point.code], ['Tipo de ponto', point.type], ['Situação', point.status], ['Localidade', point.locality], ['Endereço técnico', point.address], ['Coordenadas', coordinates], ['Capacidade', point.capacity ? point.capacity + ' portas' : ''], ['Última atualização', updated], ['Observações', point.observation]], [point.lng, point.lat], { kind: 'point', id: point.id, type: point.type, status: point.status, code: point.code, locality: point.locality, preserveView: !!renderOptions.preserveView });
+	}
+
+	function routeFeatureCoordinates(feature) {
+		var result = [];
+		function walk(value) {
+			if (!Array.isArray(value)) return;
+			if (value.length >= 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
+				result.push([Number(value[0]), Number(value[1])]);
+				return;
+			}
+			value.forEach(walk);
+		}
+		walk(feature && feature.geometry && feature.geometry.coordinates);
+		return result;
+	}
+
+	function refreshOpenSheet(map) {
+		var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
+		if (!sheet || !sheet.dataset) return;
+		var kind = sheet.dataset.itemKind || 'point';
+		if (kind === 'point') {
+			if (sheet.dataset.itemId && pointRecords[sheet.dataset.itemId]) openPointSheet(map, sheet.dataset.itemId, { preserveView: true });
+			return;
+		}
+		if (kind !== 'route' || !routeData || !Array.isArray(routeData.features)) return;
+		var identity = String(sheet.dataset.itemId || sheet.dataset.itemCode || '');
+		var feature = routeData.features.find(function (item) {
+			var props = item && item.properties || {};
+			return String(item && item.id || '') === identity || String(props._ID || props.id || props.code || props.ftthRouteId || '') === identity;
+		});
+		if (!feature) return;
+		var props = feature.properties || {};
+		var center = Array.isArray(sheet.__inmovFtthCenter) && sheet.__inmovFtthCenter.length === 2 ? sheet.__inmovFtthCenter : routeFeatureCoordinates(feature)[0];
+		if (!center) return;
+		var updated = props.updatedAt ? props.updatedAt + (props.updatedBy ? ' por ' + props.updatedBy : '') : '';
+		var coordinates = Number(center[1]).toFixed(6) + ', ' + Number(center[0]).toFixed(6);
+		var routeId = props._ID || props.id || props.ftthRouteId || feature.id;
+		openSheet(map, props.name || 'Trecho de fibra', [['Localidade', props.locality], ['Tipo', props.routeType], ['Cabo', props.cableType], ['Fibras', props.fibers ? props.fibers + ' FO' : ''], ['Extensão', props.lengthM ? props.lengthM + ' m' : ''], ['Coordenadas', coordinates], ['Última atualização', updated], ['Status', props.status]], center, { kind: 'route', id: routeId, type: props.routeType, status: props.status, code: routeId, locality: props.locality, color: props.ftthColor, preserveView: true });
 	}
 
 	function bindPointClickHandlers(map) {
@@ -1231,6 +1293,8 @@
 		}
 		function renderCityList() {
 			panel.__inmovFtthInventoryCity = null;
+			panel.__inmovFtthInventoryView = 'cities';
+			panel.__inmovFtthInventoryCategory = null;
 			body.innerHTML = '<p class="inmov-ftth-map-inventory-panel__hint">Escolha uma cidade para explorar os pontos e cabos.</p>';
 			cities().forEach(function (city) {
 				var button = document.createElement('button'); button.type = 'button'; button.className = 'inmov-ftth-map-inventory-city'; button.dataset.city = city.key;
@@ -1240,6 +1304,8 @@
 		}
 		function renderCity(city) {
 			panel.__inmovFtthInventoryCity = city;
+			panel.__inmovFtthInventoryView = 'city';
+			panel.__inmovFtthInventoryCategory = null;
 			var points = recordsForCity(city), routes = routesForCity(city), categories = {};
 			points.forEach(function (item) { var type = normalizePointType(item.type); var visual = pointVisuals[type] || pointVisuals.outro; var key = 'point:' + type; if (!categories[key]) categories[key] = { key: key, label: visual.label, color: visual.color, count: 0, kind: 'point', type: type }; categories[key].count++; });
 			routes.forEach(function (feature) { var key = 'route:all'; if (!categories[key]) categories[key] = { key: key, label: 'Fibras e rotas', color: (feature.properties && (feature.properties.ftthColor || feature.properties.color)) || '#2563eb', count: 0, kind: 'route' }; categories[key].count++; });
@@ -1250,6 +1316,8 @@
 		}
 		function renderCategory(city, categoryKey) {
 			panel.__inmovFtthInventoryCity = city;
+			panel.__inmovFtthInventoryView = 'category';
+			panel.__inmovFtthInventoryCategory = categoryKey;
 			var isRoute = categoryKey.indexOf('route:') === 0, items = isRoute && categoryKey !== 'route:all' ? routesForCity(city).filter(function (feature) { var fibers = routeFiberCount(feature); return categoryKey === 'route:' + (fibers || 'outro'); }) : recordsForCity(city).filter(function (item) { return 'point:' + normalizePointType(item.type) === categoryKey; });
 			if (categoryKey === 'route:all') {
 				var fiberGroups = {};
@@ -1291,6 +1359,17 @@
 			}
 		});
 		panel.__inmovFtthRender = renderCityList;
+		panel.__inmovFtthRefresh = function () {
+			var city = panel.__inmovFtthInventoryCity;
+			if (panel.__inmovFtthInventoryView === 'category' && city && panel.__inmovFtthInventoryCategory) {
+				renderCategory(city, panel.__inmovFtthInventoryCategory);
+			} else if (panel.__inmovFtthInventoryView === 'city' && city) {
+				renderCity(city);
+			} else {
+				renderCityList();
+			}
+		};
+		renderCityList();
 		return panel;
 	}
 
@@ -1563,11 +1642,26 @@
 			var refreshFailed = false;
 			var routeRequest = fetchRoutes().then(function (data) {
 				if (data && map.getSource && map.getSource(sourceId) && map.getSource(sourceId).setData) map.getSource(sourceId).setData(data);
+				refreshOpenSheet(map);
+				var inventory = container.parentNode && container.parentNode.querySelector ? container.parentNode.querySelector('.inmov-ftth-map-inventory-panel') : null;
+				if (inventory && typeof inventory.__inmovFtthRefresh === 'function') inventory.__inmovFtthRefresh();
 				return data;
 			}).catch(function () { refreshFailed = true; return null; });
 			var pointRequest = !config.pointsEndpoint || typeof window.fetch !== 'function' ? Promise.resolve() : window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
-				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } })
+				.then(function (data) {
+					if (Array.isArray(data)) {
+						records = data;
+						pointRecords = {};
+						data.forEach(function (item) { pointRecords[item.id] = item; });
+						decorateAllPointMarkers(map);
+						updateMarkerVisibility(map);
+						render();
+						refreshOpenSheet(map);
+						var inventory = container.parentNode && container.parentNode.querySelector ? container.parentNode.querySelector('.inmov-ftth-map-inventory-panel') : null;
+						if (inventory && typeof inventory.__inmovFtthRefresh === 'function') inventory.__inmovFtthRefresh();
+					}
+				})
 				.catch(function () { refreshFailed = true; });
 			Promise.all([routeRequest, pointRequest]).finally(function () { updateRefreshNotice(container, refreshFailed ? { error: 'Não foi possível atualizar os dados.' } : { done: true }); if (button && button.classList) window.setTimeout(function () { button.classList.remove('is-loading'); }, 350); });
 		};
@@ -1576,7 +1670,20 @@
 		if (config.pointsEndpoint && typeof window.fetch === 'function') {
 			window.fetch(config.pointsEndpoint, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
 				.then(function (response) { return response.ok ? response.json() : []; })
-				.then(function (data) { if (Array.isArray(data)) { records = data; data.forEach(function (item) { pointRecords[item.id] = item; }); decorateAllPointMarkers(map); updateMarkerVisibility(map); render(); } updateMapLoading(container, map, { points: false }); }).catch(function () { updateMapLoading(container, map, { points: false }); });
+				.then(function (data) {
+					if (Array.isArray(data)) {
+						records = data;
+						pointRecords = {};
+						data.forEach(function (item) { pointRecords[item.id] = item; });
+						decorateAllPointMarkers(map);
+						updateMarkerVisibility(map);
+						render();
+						refreshOpenSheet(map);
+						var inventory = container.parentNode && container.parentNode.querySelector ? container.parentNode.querySelector('.inmov-ftth-map-inventory-panel') : null;
+						if (inventory && typeof inventory.__inmovFtthRefresh === 'function') inventory.__inmovFtthRefresh();
+					}
+					updateMapLoading(container, map, { points: false });
+				}).catch(function () { updateMapLoading(container, map, { points: false }); });
 		}
 		var userPosition = null;
 		var searchResultsOpen = false;
@@ -2021,6 +2128,10 @@
 
 	function start() {
 		if (stopped || scanTimer) return;
+		/* Warm the route request immediately, in parallel with JetEngine/Mapbox
+		 * discovery. Previously this only started after bindMap(), which could
+		 * add up to the discovery polling delay before the network request began. */
+		fetchRoutes();
 		scanMaps();
 		// Elementor/JetEngine may create or replace the Mapbox instance after a
 		// responsive reflow or a delayed provider load. This lightweight check

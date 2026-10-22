@@ -1059,13 +1059,52 @@
 
 	function bindEditPopupSelector() {
 		var selector = config.editPopupSelector || '';
-		if (!selector || !window.JetPopupFrontend || typeof window.JetPopupFrontend.onCustomSelector !== 'function') return;
+		if (!selector) return;
+		/* JetPopup is enqueued by Elementor and can finish loading after this
+		 * map script. Keep retrying instead of silently abandoning the binding. */
+		if (!window.JetPopupFrontend || typeof window.JetPopupFrontend.onCustomSelector !== 'function') {
+			if (!editPopupBindTimer) editPopupBindTimer = window.setTimeout(function () { editPopupBindTimer = null; bindEditPopupSelector(); }, 250);
+			return;
+		}
 		try {
 			window.JetPopupFrontend.onCustomSelector(selector);
 			if (editPopupBindTimer) { window.clearTimeout(editPopupBindTimer); editPopupBindTimer = null; }
 		} catch (error) {
 			if (!editPopupBindTimer) editPopupBindTimer = window.setTimeout(function () { editPopupBindTimer = null; bindEditPopupSelector(); }, 250);
 		}
+	}
+
+	function showEditPopupFallback() {
+		var popupId = String(config.editPopupId || '3701');
+		var popup = document.getElementById('jet-popup-' + popupId);
+		if (!popup) return false;
+		popup.classList.remove('jet-popup--hide-state');
+		popup.classList.add('jet-popup--show-state');
+		popup.setAttribute('aria-hidden', 'false');
+		if (!popup.__inmovFtthEditCloseBound) {
+			popup.__inmovFtthEditCloseBound = true;
+			popup.addEventListener('click', function (event) {
+				var closeTarget = event.target && event.target.closest ? event.target.closest('.jet-popup__close-button, .jet-popup__overlay') : null;
+				if (!closeTarget) return;
+				popup.classList.remove('jet-popup--show-state');
+				popup.classList.add('jet-popup--hide-state');
+				popup.setAttribute('aria-hidden', 'true');
+			});
+		}
+		return true;
+	}
+
+	function openEditPopup(trigger) {
+		var popupId = String(config.editPopupId || '3701');
+		var popup = document.getElementById('jet-popup-' + popupId);
+		if (popup && popup.classList.contains('jet-popup--show-state')) return true;
+		if (window.JetPopupFrontend && typeof window.JetPopupFrontend.showPopup === 'function') {
+			try {
+				window.JetPopupFrontend.showPopup(popupId, $ ? $(trigger) : trigger);
+				return true;
+			} catch (error) {}
+		}
+		return showEditPopupFallback();
 	}
 
 	function bindEditPopupPrefillEvents() {
@@ -1868,7 +1907,7 @@
 		var routeButton = sheet.querySelector('[data-sheet-action="route"]');
 		if (routeButton && routeButton.addEventListener) routeButton.addEventListener('click', function () { openGoogleMapsRoute(sheet.__inmovFtthRouteCenter || []); });
 		var editButton = sheet.querySelector('[data-sheet-action="edit"]');
-		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function () {
+		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function (event) {
 			var point = sheet.dataset.itemKind === 'point' ? pointRecords[sheet.dataset.itemId] : null;
 			var detail = point ? editPointPayload(point) : { id: sheet.dataset.itemId || '', code: sheet.dataset.itemCode || '', kind: sheet.dataset.itemKind || '', type: sheet.dataset.itemType || '' };
 			pendingEditItem = detail;
@@ -1879,11 +1918,11 @@
 			try { document.dispatchEvent(new CustomEvent('inmov-ftth:edit-item', { detail: detail })); } catch (error) {}
 			var selector = config.editPopupSelector || '';
 			if (selector) {
-				var trigger = null;
-				try { trigger = editButton.matches && editButton.matches(selector) ? editButton : document.querySelector(selector); } catch (error) {}
-				/* The button itself is the custom-selector trigger. Clicking it again
-				 * would recurse, so only click a separate configured trigger. */
-				if (trigger && trigger !== editButton && typeof trigger.click === 'function') trigger.click();
+				/* The map button is itself the custom-selector trigger. Stop the
+				 * delegated JetPopup handler from toggling it a second time, then
+				 * open the configured popup directly (with a DOM fallback). */
+				if (event && event.stopPropagation) event.stopPropagation();
+				openEditPopup(editButton);
 				bindEditPopupSelector();
 			}
 		});

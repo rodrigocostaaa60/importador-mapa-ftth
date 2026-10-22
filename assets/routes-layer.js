@@ -1076,6 +1076,7 @@
 	}
 
 	function showEditPopupFallback() {
+		if (!canEditPoints()) return false;
 		var popupId = String(config.editPopupId || '3701');
 		var popup = document.getElementById('jet-popup-' + popupId);
 		if (!popup) return false;
@@ -1120,6 +1121,7 @@
 	}
 
 	function openEditPopup(trigger) {
+		if (!canEditPoints()) return false;
 		var popupId = String(config.editPopupId || '3701');
 		var popup = document.getElementById('jet-popup-' + popupId);
 		if (popup && popup.classList.contains('jet-popup--show-state')) return true;
@@ -1158,6 +1160,37 @@
 		if (map) map.__inmovFtthEditSelecting = false;
 		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
 		if (host && host.classList) host.classList.remove('inmov-ftth-map-shell--edit-open');
+	}
+
+	function canEditPoints() {
+		return config.canEditPoints === true;
+	}
+
+	function showEditPermissionNotice(sheet) {
+		if (!sheet || !sheet.appendChild) return;
+		var notice = sheet.querySelector('.inmov-ftth-map-sheet__permission-notice');
+		if (!notice) {
+			notice = document.createElement('div');
+			notice.className = 'inmov-ftth-map-sheet__permission-notice';
+			notice.setAttribute('role', 'status');
+			notice.setAttribute('aria-live', 'polite');
+			sheet.appendChild(notice);
+		}
+		if (notice.__inmovFtthTimer) window.clearTimeout(notice.__inmovFtthTimer);
+		notice.innerHTML = '<span aria-hidden="true">🔒</span><span>Seu usuário não tem permissão para editar este ponto.</span>';
+		notice.classList.add('is-visible');
+		notice.__inmovFtthTimer = window.setTimeout(function () {
+			notice.classList.remove('is-visible');
+			notice.__inmovFtthTimer = null;
+		}, 4200);
+	}
+
+	function hideEditPermissionNotice(sheet) {
+		var notice = sheet && sheet.querySelector ? sheet.querySelector('.inmov-ftth-map-sheet__permission-notice') : null;
+		if (!notice) return;
+		if (notice.__inmovFtthTimer) window.clearTimeout(notice.__inmovFtthTimer);
+		notice.classList.remove('is-visible');
+		notice.__inmovFtthTimer = null;
 	}
 
 	function updateNativeEditLocationMode(panel, map) {
@@ -1311,6 +1344,15 @@
 		sheet.dataset.status = statusKey;
 		sheet.dataset.itemId = options.id || '';
 		sheet.dataset.itemCode = options.code || '';
+		var editAction = sheet.querySelector('[data-sheet-action="edit"]');
+		var isPoint = (options.kind || 'point') === 'point';
+		if (editAction) {
+			editAction.classList.toggle('is-hidden', !isPoint);
+			editAction.classList.toggle('is-disabled', isPoint && !canEditPoints());
+			editAction.setAttribute('aria-disabled', isPoint && !canEditPoints() ? 'true' : 'false');
+			editAction.title = isPoint && !canEditPoints() ? 'Seu usuário não tem permissão para editar pontos' : 'Editar ponto';
+		}
+		hideEditPermissionNotice(sheet);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__type', visual.label);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__status-text', status);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__code', options.code ? '#' + options.code : '');
@@ -2089,6 +2131,10 @@
 			if (!point) return;
 			if (event && event.preventDefault) event.preventDefault();
 			if (event && event.stopPropagation) event.stopPropagation();
+			if (!canEditPoints()) {
+				showEditPermissionNotice(sheet);
+				return;
+			}
 			openNativeEditPanel(container, map, point);
 		});
 		var records = markerRecords(container);

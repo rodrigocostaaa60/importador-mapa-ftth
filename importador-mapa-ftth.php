@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.46
+ * Version: 0.10.47
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.46';
+	const VERSION               = '0.10.47';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -549,6 +549,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'editPopupSelector' => '.e_pdrf',
 				'editPopupId' => 3701,
 				'editFormId' => 3699,
+				'canEditPoints' => is_user_logged_in() && current_user_can( 'edit_posts' ),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
 		);

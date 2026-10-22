@@ -1081,6 +1081,23 @@
 		popup.classList.remove('jet-popup--hide-state');
 		popup.classList.add('jet-popup--show-state');
 		popup.setAttribute('aria-hidden', 'false');
+		/* The JetPopup instance is not exposed as a public showPopup method.
+		 * When the map creates this trigger dynamically, JetPopup's animation
+		 * never receives its completion callback and leaves the container at
+		 * opacity:0. Apply the final state explicitly so the form is visible and
+		 * receives pointer input instead of leaving an invisible layer over the
+		 * map. */
+		var inner = popup.querySelector('.jet-popup__inner');
+		var overlay = popup.querySelector('.jet-popup__overlay');
+		var container = popup.querySelector('.jet-popup__container');
+		var content = popup.querySelector('.jet-popup__container-content');
+		popup.style.opacity = '1';
+		popup.style.visibility = 'visible';
+		popup.style.pointerEvents = 'auto';
+		if (inner) { inner.style.opacity = '1'; inner.style.visibility = 'visible'; inner.style.pointerEvents = 'auto'; }
+		if (overlay) { overlay.style.opacity = '1'; overlay.style.pointerEvents = 'all'; }
+		if (container) { container.style.opacity = '1'; container.style.visibility = 'visible'; container.style.pointerEvents = 'auto'; container.style.transform = 'none'; }
+		if (content) { content.style.opacity = '1'; content.style.visibility = 'visible'; content.style.pointerEvents = 'auto'; }
 		if (!popup.__inmovFtthEditCloseBound) {
 			popup.__inmovFtthEditCloseBound = true;
 			popup.addEventListener('click', function (event) {
@@ -1089,6 +1106,13 @@
 				popup.classList.remove('jet-popup--show-state');
 				popup.classList.add('jet-popup--hide-state');
 				popup.setAttribute('aria-hidden', 'true');
+				popup.style.opacity = '';
+				popup.style.visibility = '';
+				popup.style.pointerEvents = '';
+				if (inner) { inner.style.opacity = ''; inner.style.visibility = ''; inner.style.pointerEvents = ''; }
+				if (overlay) { overlay.style.opacity = ''; overlay.style.pointerEvents = ''; }
+				if (container) { container.style.opacity = ''; container.style.visibility = ''; container.style.pointerEvents = ''; container.style.transform = ''; }
+				if (content) { content.style.opacity = ''; content.style.visibility = ''; content.style.pointerEvents = ''; }
 			});
 		}
 		return true;

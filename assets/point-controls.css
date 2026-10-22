@@ -615,8 +615,8 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   color:#0057b8;
  }
  .inmov-ftth-map-shell .inmov-ftth-map-bottom-bar svg{
-  width:21px;
-  height:21px;
+   width:26px;
+   height:26px;
   display:block;
  }
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel,
@@ -680,12 +680,40 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   border-radius:14px;
   font-size:15px;
  }
- .inmov-ftth-map-shell .inmov-ftth-point-search:before{top:25px;left:19px}
- .inmov-ftth-map-shell .inmov-ftth-point-search:after{top:25px;right:14px}
+  .inmov-ftth-map-shell .inmov-ftth-point-search:before{
+   top:25px;
+   left:19px;
+   width:24px;
+   height:24px;
+   display:grid;
+   place-items:center;
+   line-height:1;
+   transform:translateY(-50%);
+  }
+  .inmov-ftth-map-shell .inmov-ftth-point-search:after{
+   top:25px;
+   right:14px;
+   min-width:24px;
+   height:24px;
+   display:flex;
+   align-items:center;
+   justify-content:center;
+   box-sizing:border-box;
+   line-height:1.2;
+   transform:translateY(-50%);
+  }
  .inmov-ftth-map-shell .inmov-ftth-map-legend{
-  top:84px;
-  left:24px;
-  max-width:min(470px,calc(100% - 48px));
+   top:20px;
+   left:calc(24px + min(470px,calc(100% - 48px)) + 12px);
+   width:min(470px,calc(100% - 48px - min(470px,calc(100% - 48px)) - 12px));
+   max-width:none;
+   height:66px;
+   box-sizing:border-box;
+   display:flex;
+   flex-direction:column;
+   justify-content:center;
+   padding:8px 13px;
+   border-radius:16px;
  }
 
  /* Mapbox puts every control in one top-right stack. Make that stack a
@@ -708,15 +736,22 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   position:absolute;
   top:auto;
   right:24px;
-  bottom:104px;
+   bottom:92px;
   left:auto;
   z-index:2001;
+   gap:4px!important;
+   padding:0!important;
+   border:0!important;
+   border-radius:0!important;
+   background:transparent!important;
+   box-shadow:none!important;
+   overflow:visible!important;
  }
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-geolocate-control{
   position:absolute;
   top:auto;
   right:24px;
-  bottom:158px;
+   bottom:170px;
   left:auto;
   z-index:2001;
   border:0!important;
@@ -782,4 +817,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   box-shadow:0 10px 28px rgba(15,23,42,.18),0 2px 7px rgba(15,23,42,.08);
  }
  .inmov-ftth-map-shell .inmov-ftth-refresh-notice__spinner{width:18px;height:18px}
+  @media (min-width:1024px) and (max-width:1499px){
+   .inmov-ftth-map-shell:has(.inmov-ftth-map-legend:not(.is-hidden)) .inmov-ftth-refresh-notice{top:98px}
+  }
 }

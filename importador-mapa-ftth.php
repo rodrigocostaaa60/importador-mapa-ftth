@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.48
+ * Version: 0.10.49
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.48';
+	const VERSION               = '0.10.49';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -197,6 +197,170 @@ final class Inmov_JetEngine_FTTH_Importer {
 			),
 			'callback'            => array( $this, 'create_permission_notification' ),
 		) );
+		register_rest_route( 'inmov-ftth/v1', '/notifications', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'callback'            => array( $this, 'get_user_notifications' ),
+		) );
+		register_rest_route( 'inmov-ftth/v1', '/notifications/read', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'args'                => array(
+				'notification_id' => array(
+					'required'          => true,
+					'sanitize_callback' => 'absint',
+					'validate_callback' => function( $value ) { return (int) $value > 0; },
+				),
+			),
+			'callback'            => array( $this, 'mark_notification_read' ),
+		) );
+		register_rest_route( 'inmov-ftth/v1', '/notifications/read-all', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'callback'            => array( $this, 'mark_all_notifications_read' ),
+		) );
+	}
+
+	/** Return active notifications addressed to the authenticated user. */
+	public function get_user_notifications() {
+		$user_id = get_current_user_id();
+		if ( ! $user_id ) {
+			return new WP_Error( 'inmov_ftth_notifications_unauthorized', 'Usuário não autenticado.', array( 'status' => 401 ) );
+		}
+
+		global $wpdb;
+		$notification_table = $wpdb->prefix . 'jet_cct_pj_notificacoes';
+		$read_table         = $wpdb->prefix . 'jet_cct_pj_notificacoes_leitura';
+		$now                = current_time( 'mysql' );
+		$rows               = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$notification_table}
+				 WHERE (notificacao_status IN ('ativa','nativa') OR notificacao_status IS NULL OR notificacao_status = '')
+				 AND (notificacao_expira_em IS NULL OR notificacao_expira_em = '' OR notificacao_expira_em = %s OR REPLACE(notificacao_expira_em, 'T', ' ') >= %s)
+				 AND (cct_status IS NULL OR cct_status = '' OR cct_status = 'publish')
+				 ORDER BY notificacao_criada_em DESC, _ID DESC LIMIT 100",
+				'1970-01-01T00:00',
+				$now
+			),
+			ARRAY_A
+		);
+		if ( ! is_array( $rows ) ) {
+			$rows = array();
+		}
+
+		$read_ids = $wpdb->get_col( $wpdb->prepare( "SELECT leitura_notificacao_id FROM {$read_table} WHERE leitura_usuario_id = %d AND (leitura_dispensada_em IS NULL OR leitura_dispensada_em = '')", $user_id ) );
+		$read_ids = array_map( 'absint', is_array( $read_ids ) ? $read_ids : array() );
+		$user     = wp_get_current_user();
+		$roles    = array_map( 'strtolower', (array) $user->roles );
+		$sectors  = array();
+		foreach ( array( get_user_meta( $user_id, 'setor', true ), get_user_meta( $user_id, 'departamento', true ), get_user_meta( $user_id, 'user_setor', true ) ) as $sector ) {
+			$sectors = array_merge( $sectors, $this->notification_tokens( $sector ) );
+		}
+		$sectors = array_values( array_unique( $sectors ) );
+		$output  = array();
+
+		foreach ( $rows as $row ) {
+			$id           = absint( $row['_ID'] ?? $row['id'] ?? 0 );
+			$destination  = strtolower( trim( (string) ( $row['notificacao_destino_tipo'] ?? '' ) ) );
+			$targets      = $this->notification_tokens( $row['notificacao_usuarios_ids'] ?? '' );
+			$profiles     = $this->notification_tokens( $row['notificacao_perfis'] ?? '' );
+			$row_sectors  = $this->notification_tokens( $row['notificacao_setores_ids'] ?? '' );
+			$visible      = 'global' === $destination;
+			if ( 'usuario' === $destination ) {
+				$visible = in_array( (string) $user_id, $targets, true );
+			} elseif ( 'perfil' === $destination ) {
+				$visible = (bool) array_intersect( $roles, $profiles );
+			} elseif ( 'setor' === $destination ) {
+				$visible = (bool) array_intersect( $sectors, $row_sectors );
+			}
+			if ( ! $visible || ! $id ) {
+				continue;
+			}
+			$output[] = array(
+				'id'           => $id,
+				'title'        => sanitize_text_field( $row['notificacao_titulo'] ?? 'Notificação' ),
+				'message'      => wp_strip_all_tags( (string) ( $row['notificacao_mensagem'] ?? '' ) ),
+				'type'         => sanitize_key( $row['notificacao_tipo'] ?? 'informacao' ),
+				'priority'     => sanitize_key( $row['notificacao_prioridade'] ?? 'normal' ),
+				'url'          => esc_url_raw( $row['notificacao_url'] ?? '' ),
+				'created_at'   => sanitize_text_field( $row['notificacao_criada_em'] ?? '' ),
+				'read'         => in_array( $id, $read_ids, true ),
+				'dismissible'  => ! empty( $row['notificacao_dispensavel'] ),
+				'requires_ack' => ! empty( $row['notificacao_exige_ciencia'] ),
+			);
+		}
+
+		$unread = count( array_filter( $output, function( $item ) { return empty( $item['read'] ); } ) );
+		return rest_ensure_response( array( 'items' => $output, 'unread' => $unread ) );
+	}
+
+	/** Mark one notification as read in the JetEngine readings CCT. */
+	public function mark_notification_read( WP_REST_Request $request ) {
+		$id = absint( $request->get_param( 'notification_id' ) );
+		if ( ! $id || ! $this->user_can_see_notification( $id ) ) {
+			return new WP_Error( 'inmov_ftth_notification_not_found', 'Notificação não encontrada.', array( 'status' => 404 ) );
+		}
+		global $wpdb;
+		$table   = $wpdb->prefix . 'jet_cct_pj_notificacoes_leitura';
+		$user_id = get_current_user_id();
+		$exists  = $wpdb->get_var( $wpdb->prepare( "SELECT _ID FROM {$table} WHERE leitura_notificacao_id = %d AND leitura_usuario_id = %d LIMIT 1", $id, $user_id ) );
+		if ( $exists ) {
+			return rest_ensure_response( array( 'marked' => true, 'id' => $id ) );
+		}
+		$type = $this->cct_type( 'pj_notificacoes_leitura' );
+		if ( ! $type || ! method_exists( $type, 'get_item_handler' ) ) {
+			return new WP_Error( 'inmov_ftth_readings_cct_unavailable', 'O CCT de leituras não está disponível.', array( 'status' => 503 ) );
+		}
+		$reading_id = $type->get_item_handler()->update_item( array(
+			'leitura_notificacao_id' => $id,
+			'leitura_usuario_id'     => $user_id,
+			'leitura_lida_em'        => current_time( 'Y-m-d\\TH:i' ),
+			'leitura_ip'             => sanitize_text_field( $_SERVER['REMOTE_ADDR'] ?? '' ),
+		) );
+		if ( is_wp_error( $reading_id ) || ! $reading_id ) {
+			return new WP_Error( 'inmov_ftth_notification_read_failed', 'Não foi possível registrar a leitura.', array( 'status' => 500 ) );
+		}
+		return rest_ensure_response( array( 'marked' => true, 'id' => $id ) );
+	}
+
+	/** Mark every currently visible notification as read. */
+	public function mark_all_notifications_read() {
+		$data = $this->get_user_notifications();
+		if ( is_wp_error( $data ) ) {
+			return $data;
+		}
+		$payload = $data->get_data();
+		$marked  = 0;
+		foreach ( (array) ( $payload['items'] ?? array() ) as $item ) {
+			if ( empty( $item['read'] ) ) {
+				$request = new WP_REST_Request( 'POST', '/inmov-ftth/v1/notifications/read' );
+				$request->set_param( 'notification_id', absint( $item['id'] ) );
+				$result = $this->mark_notification_read( $request );
+				if ( ! is_wp_error( $result ) ) {
+					$marked++;
+				}
+			}
+		}
+		return rest_ensure_response( array( 'marked' => $marked ) );
+	}
+
+	private function notification_tokens( $value ) {
+		$tokens = preg_split( '/[,;|\\s]+/', strtolower( trim( (string) $value ) ) );
+		return array_values( array_filter( array_map( 'sanitize_key', is_array( $tokens ) ? $tokens : array() ) ) );
+	}
+
+	private function user_can_see_notification( $notification_id ) {
+		$response = $this->get_user_notifications();
+		if ( is_wp_error( $response ) ) {
+			return false;
+		}
+		$data = $response->get_data();
+		foreach ( (array) ( $data['items'] ?? array() ) as $item ) {
+			if ( (int) $item['id'] === (int) $notification_id ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -610,6 +774,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 	/** Add the route line layer to the existing JetEngine Mapbox map on the FTTH page. */
 	public function enqueue_map_routes_layer() {
+		$this->enqueue_notifications_ui();
 		if ( ! is_page( 3600 ) && ! is_page( 'mapa-da-rede-ftth' ) ) {
 			return;
 		}
@@ -635,6 +800,37 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'editFormId' => 3699,
 				'canEditPoints' => is_user_logged_in() && current_user_can( 'edit_posts' ),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
+			)
+		);
+	}
+
+	/** Enqueue the authenticated JetEngine notification bell on frontend pages. */
+	private function enqueue_notifications_ui() {
+		if ( ! is_user_logged_in() || ! current_user_can( 'read' ) ) {
+			return;
+		}
+		wp_enqueue_style(
+			'inmov-ftth-notifications',
+			plugin_dir_url( __FILE__ ) . 'assets/notifications.css',
+			array(),
+			self::VERSION
+		);
+		wp_enqueue_script(
+			'inmov-ftth-notifications',
+			plugin_dir_url( __FILE__ ) . 'assets/notifications.js',
+			array(),
+			self::VERSION,
+			true
+		);
+		wp_localize_script(
+			'inmov-ftth-notifications',
+			'InmovFtthNotifications',
+			array(
+				'endpoint'   => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications' ) ),
+				'readEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/read' ) ),
+				'readAllEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/read-all' ) ),
+				'nonce'      => wp_create_nonce( 'wp_rest' ),
+				'pollMs'     => 60000,
 			)
 		);
 	}

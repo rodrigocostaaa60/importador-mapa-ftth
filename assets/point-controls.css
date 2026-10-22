@@ -517,7 +517,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
 
 /* Desktop layout: keep Mapbox's physical controls visible at the top-right,
  * while the application actions use a compact dock and side drawers. */
-@media(min-width:768px){
+@media(min-width:1024px){
  .inmov-ftth-map-shell .inmov-ftth-point-search{
   inset-block-start:20px;
   inset-inline-start:24px;

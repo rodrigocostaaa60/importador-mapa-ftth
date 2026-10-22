@@ -483,6 +483,18 @@
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-city,.inmov-ftth-map-shell .inmov-ftth-map-inventory-category,.inmov-ftth-map-shell .inmov-ftth-map-inventory-item{min-height:62px}
 }
 
+/* Keep the normal desktop stack deterministic. When editing, the script
+ * temporarily hides any already-open underlays and promotes the editor as the
+ * only active surface, so none of these layers can intercept clicks or map
+ * viewport calculations. */
+@media(min-width:1024px){
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel{z-index:6200!important}
+ .inmov-ftth-map-shell .inmov-ftth-map-sheet{z-index:6000!important}
+ .inmov-ftth-map-shell .inmov-ftth-map-edit-panel{z-index:5600!important}
+ .inmov-ftth-map-shell.inmov-ftth-map-shell--edit-open .inmov-ftth-map-edit-panel{z-index:6500!important}
+ .inmov-ftth-map-shell .inmov-ftth-map-panel--edit-underlay{visibility:hidden!important;pointer-events:none!important}
+}
+
 /* Safari/iOS can expose the normal-flow search wrapper as page overflow when
  * the map shell is narrower than the visual viewport. Keep the document fixed
  * and allow scrolling only inside the panels that explicitly own a scroller. */

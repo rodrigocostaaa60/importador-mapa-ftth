@@ -1150,12 +1150,54 @@
 		return panel && panel.querySelector ? panel.querySelector('[name="' + name + '"]') : null;
 	}
 
+	/* A point can be opened from the inventory while its details sheet is still
+	 * mounted underneath it. On desktop those surfaces occupy the same column;
+	 * leaving them visible makes the editor look clipped and lets the hidden
+	 * sheet win viewport/centering calculations. Keep their state, temporarily
+	 * suspend them while editing, and restore them exactly when the editor
+	 * closes. The mobile layout benefits from the same single-active-panel rule.
+	 */
+	function suspendNativeEditUnderlays(panel, host) {
+		if (!panel || !host || !host.querySelectorAll) return;
+		var state = [];
+		Array.prototype.forEach.call(host.querySelectorAll('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open'), function (underlay) {
+			if (!underlay || underlay === panel) return;
+			state.push({
+				element: underlay,
+				ariaHidden: underlay.getAttribute('aria-hidden'),
+				visibility: underlay.style.visibility,
+				pointerEvents: underlay.style.pointerEvents,
+				wasOpen: underlay.classList.contains('is-open'),
+			});
+			underlay.classList.add('inmov-ftth-map-panel--edit-underlay');
+			underlay.setAttribute('aria-hidden', 'true');
+			underlay.style.visibility = 'hidden';
+			underlay.style.pointerEvents = 'none';
+		});
+		panel.__inmovFtthEditUnderlays = state;
+	}
+
+	function restoreNativeEditUnderlays(panel) {
+		if (!panel || !Array.isArray(panel.__inmovFtthEditUnderlays)) return;
+		panel.__inmovFtthEditUnderlays.forEach(function (entry) {
+			var underlay = entry && entry.element;
+			if (!underlay) return;
+			underlay.classList.remove('inmov-ftth-map-panel--edit-underlay');
+			if (entry.ariaHidden === null || entry.ariaHidden === undefined) underlay.removeAttribute('aria-hidden');
+			else underlay.setAttribute('aria-hidden', entry.ariaHidden);
+			underlay.style.visibility = entry.visibility || '';
+			underlay.style.pointerEvents = entry.pointerEvents || '';
+		});
+		panel.__inmovFtthEditUnderlays = [];
+	}
+
 	function closeNativeEditPanel(map) {
 		var panel = nativeEditPanel;
 		if (!panel) return;
 		panel.classList.remove('is-open', 'is-expanded', 'is-saving');
 		panel.setAttribute('aria-hidden', 'true');
 		if (map) map.__inmovFtthEditSelecting = false;
+		restoreNativeEditUnderlays(panel);
 		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
 		if (host && host.classList) host.classList.remove('inmov-ftth-map-shell--edit-open');
 	}
@@ -1286,7 +1328,10 @@
 		panel.classList.add('is-open');
 		panel.setAttribute('aria-hidden', 'false');
 		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
-		if (host && host.classList) host.classList.add('inmov-ftth-map-shell--edit-open');
+		if (host && host.classList) {
+			suspendNativeEditUnderlays(panel, host);
+			host.classList.add('inmov-ftth-map-shell--edit-open');
+		}
 		return true;
 	}
 

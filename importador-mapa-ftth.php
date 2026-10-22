@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.43
+ * Version: 0.10.44
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.43';
+	const VERSION               = '0.10.44';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -202,10 +202,18 @@ final class Inmov_JetEngine_FTTH_Importer {
 			}
 		}
 
-		$allowed_types = array( 'pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'loja', 'outro' );
-		$allowed_statuses = array( 'nativo', 'ativo', 'planejado', 'em_implantacao', 'em_manutencao', 'manutencao', 'inativo' );
-		$type = sanitize_key( $params['ponto_tipo'] );
-		$status = sanitize_key( $params['ponto_status'] );
+		/* The map has a visual “loja/sede” type and a couple of friendly status
+		 * labels, while the CCT select stores “outro”, “nativo” and
+		 * “manutencao”. Normalize those UI aliases before handing the payload to
+		 * JetEngine so its select validation cannot silently discard the update. */
+		$requested_type = sanitize_key( $params['ponto_tipo'] );
+		$type_aliases   = array( 'loja' => 'outro' );
+		$type           = $type_aliases[ $requested_type ] ?? $requested_type;
+		$requested_status = sanitize_key( $params['ponto_status'] );
+		$status_aliases   = array( 'ativo' => 'nativo', 'em_manutencao' => 'manutencao' );
+		$status           = $status_aliases[ $requested_status ] ?? $requested_status;
+		$allowed_types    = array( 'pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'outro' );
+		$allowed_statuses = array( 'nativo', 'planejado', 'em_implantacao', 'manutencao', 'inativo' );
 		if ( ! in_array( $type, $allowed_types, true ) || ! in_array( $status, $allowed_statuses, true ) ) {
 			return new WP_Error( 'inmov_ftth_invalid_option', 'Tipo ou situação inválida.', array( 'status' => 400 ) );
 		}
@@ -242,8 +250,31 @@ final class Inmov_JetEngine_FTTH_Importer {
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'inmov_ftth_point_update_failed', $error->getMessage(), array( 'status' => 500 ) );
 		}
-		if ( is_wp_error( $saved_id ) || ! $saved_id ) {
+		if ( is_wp_error( $saved_id ) || false === $saved_id || null === $saved_id ) {
 			return new WP_Error( 'inmov_ftth_point_update_failed', 'O JetEngine não confirmou a gravação do ponto.', array( 'status' => 500 ) );
+		}
+		/* Do not report success merely because the handler returned. Re-read the
+		 * CCT row and verify every field that the editor sent; this catches a
+		 * misconfigured CCT field or a rejected select value immediately. */
+		$verify = $wpdb->get_row( $wpdb->prepare( "SELECT ponto_codigo, ponto_nome, ponto_tipo, ponto_status, ponto_localidade, ponto_endereco, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE _ID = %d LIMIT 1", $id ), ARRAY_A );
+		if ( ! is_array( $verify ) ) {
+			return new WP_Error( 'inmov_ftth_point_update_not_persisted', 'O CCT não retornou o ponto após a gravação.', array( 'status' => 500 ) );
+		}
+		$expected = array(
+			'ponto_codigo' => $data['ponto_codigo'],
+			'ponto_nome' => $data['ponto_nome'],
+			'ponto_tipo' => $data['ponto_tipo'],
+			'ponto_status' => $data['ponto_status'],
+			'ponto_localidade' => $data['ponto_localidade'],
+			'ponto_endereco' => $data['ponto_endereco'],
+			'ponto_capacidade_portas' => (string) $data['ponto_capacidade_portas'],
+			'ponto_observacao' => $data['ponto_observacao'],
+		);
+		foreach ( $expected as $field => $expected_value ) {
+			$actual_value = isset( $verify[ $field ] ) ? (string) $verify[ $field ] : '';
+			if ( $actual_value !== (string) $expected_value ) {
+				return new WP_Error( 'inmov_ftth_point_update_not_persisted', 'O CCT não persistiu o campo “' . $field . '”. Verifique a configuração desse campo no JetEngine.', array( 'status' => 500, 'field' => $field ) );
+			}
 		}
 
 		$all = $this->get_points();

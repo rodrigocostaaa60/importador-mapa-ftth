@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.39';
+	const VERSION               = '0.10.40';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -319,7 +319,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 			array(
 				'endpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes' ) ),
 				'pointsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
-				'editPopupSelector' => '',
+				'editPopupSelector' => '.e_pdrf',
+				'editPopupId' => 3701,
+				'editFormId' => 3699,
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
 		);

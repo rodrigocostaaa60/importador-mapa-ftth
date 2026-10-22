@@ -46,6 +46,10 @@ O preview fica em transient por 30 minutos, vinculado ao usuário autenticado. O
 - Não atualiza itens previamente importados. `source_key` já existente é pulado; geometrias iguais são marcadas como possível duplicidade para decisão manual.
 - A consulta da camada está limitada a 3.000 rotas e 100.000 vértices para evitar respostas excessivas.
 
+## Formulário de edição no frontend
+
+O diretório `assets/edit-form/` contém uma referência visual independente e o plano oficial para montar a edição usando JetFormBuilder no frontend. O blueprint e o mapeamento dos dois CCTs estão em `assets/edit-form/jetformbuilder-blueprint.json` e `assets/edit-form/JETFORMBUILDER.md`. Nada é carregado pelo plugin atual, nenhum CCT é atualizado e a integração com o mapa permanece desativada até a validação.
+
 ## Instalação
 
 ### Estilo das rotas por FO (0.3.5)

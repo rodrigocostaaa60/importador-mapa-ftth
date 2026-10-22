@@ -26,6 +26,9 @@
 	var selectedPointContainerZIndex = '';
 	var selectedRouteRecord = null;
 	var selectedRouteId = null;
+	var pendingEditItem = null;
+	var editPrefillTimer = null;
+	var editPopupBindTimer = null;
 	var defaultMapStyle = 'mapbox://styles/mapbox/outdoors-v12';
 	// streets-v12 is a standard street style; satellite-streets-v12 is the
 	// Mapbox style that actually provides satellite imagery.
@@ -946,6 +949,135 @@
 		openExternalUrl(url);
 	}
 
+	/*
+	 * JetPopup opens the form through a delegated custom-selector click.  The
+	 * popup is rendered independently from the map, so pass the selected CCT
+	 * record through a short-lived in-memory payload and hydrate the form after
+	 * JetPopup has rendered it.  This keeps the popup reusable while ensuring
+	 * its hidden update-field contains the selected CCT item ID (not the popup
+	 * post ID).
+	 */
+	function editFieldSelector(name) {
+		return '[name="' + String(name || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+	}
+
+	function dispatchEditFieldEvents(field) {
+		if (!field || !field.dispatchEvent) return;
+		try { field.dispatchEvent(new Event('input', { bubbles: true })); } catch (error) {}
+		try { field.dispatchEvent(new Event('change', { bubbles: true })); } catch (error) {}
+	}
+
+	function setEditFieldValue(form, name, value) {
+		if (!form || !form.querySelectorAll || !name) return;
+		var fields;
+		try { fields = form.querySelectorAll(editFieldSelector(name)); } catch (error) { return; }
+		var normalized = value === undefined || value === null ? '' : String(value);
+		Array.prototype.forEach.call(fields, function (field) {
+			var type = String(field.type || '').toLowerCase();
+			if (type === 'radio') {
+				field.checked = String(field.value) === normalized;
+				if (field.checked) dispatchEditFieldEvents(field);
+				return;
+			}
+			if (type === 'checkbox') {
+				field.checked = normalized === 'yes' || normalized === '1' || normalized === 'true';
+				dispatchEditFieldEvents(field);
+				return;
+			}
+			field.value = normalized;
+			dispatchEditFieldEvents(field);
+		});
+	}
+
+	function editPointPayload(point) {
+		point = point || {};
+		return {
+			nonce: Date.now(),
+			id: point.id !== undefined ? String(point.id) : '',
+			code: String(point.code || point.ponto_codigo || ''),
+			name: String(point.name || point.ponto_nome || ''),
+			type: normalizePointType(point.type || point.ponto_tipo || ''),
+			status: String(point.status || point.ponto_status || ''),
+			locality: String(point.locality || point.ponto_localidade || ''),
+			address: String(point.address || point.ponto_endereco || ''),
+			lat: point.lat !== undefined ? point.lat : point.ponto_latitude,
+			lng: point.lng !== undefined ? point.lng : point.ponto_longitude,
+			capacity: point.capacity !== undefined ? point.capacity : point.ponto_capacidade_portas,
+			observation: String(point.observation || point.ponto_observacao || '')
+		};
+	}
+
+	function prefillEditForm(form, payload) {
+		if (!form || !payload || !payload.id) return false;
+		var token = payload.nonce + '|' + payload.id + '|' + payload.code + '|' + payload.name;
+		if (form.getAttribute('data-inmov-ftth-prefilled') === token) return true;
+		setEditFieldValue(form, 'inmov_item_id', payload.id);
+		setEditFieldValue(form, '_inmov_item_id', payload.id);
+		setEditFieldValue(form, 'item_id', payload.id);
+		setEditFieldValue(form, 'post_id', payload.id);
+		setEditFieldValue(form, 'ponto_codigo', payload.code);
+		setEditFieldValue(form, 'ponto_nome', payload.name);
+		setEditFieldValue(form, 'ponto_tipo', payload.type);
+		setEditFieldValue(form, 'ponto_status', payload.status);
+		setEditFieldValue(form, 'ponto_localidade', payload.locality);
+		setEditFieldValue(form, 'ponto_endereco', payload.address);
+		setEditFieldValue(form, 'ponto_capacidade_portas', payload.capacity);
+		setEditFieldValue(form, 'ponto_latitude', payload.lat);
+		setEditFieldValue(form, 'ponto_longitude', payload.lng);
+		setEditFieldValue(form, 'ponto_localizacao_lat', payload.lat);
+		setEditFieldValue(form, 'ponto_localizacao_lng', payload.lng);
+		setEditFieldValue(form, 'ponto_localizacao', payload.lat !== undefined && payload.lng !== undefined ? String(payload.lat) + ',' + String(payload.lng) : '');
+		setEditFieldValue(form, 'inmov_location_mode', 'keep');
+		setEditFieldValue(form, 'inmov_change_reason', '');
+		setEditFieldValue(form, 'inmov_reviewed', '');
+		form.setAttribute('data-inmov-ftth-item-id', payload.id);
+		form.setAttribute('data-inmov-ftth-prefilled', token);
+		return true;
+	}
+
+	function prefillPendingEditForm() {
+		if (!pendingEditItem || !document.querySelectorAll) return false;
+		var formSelector = config.editFormId ? 'form[data-form-id="' + String(config.editFormId).replace(/"/g, '\\"') + '"]' : 'form.jet-form-builder';
+		var forms;
+		try { forms = document.querySelectorAll(formSelector); } catch (error) { return false; }
+		var found = false;
+		Array.prototype.forEach.call(forms, function (form) { if (prefillEditForm(form, pendingEditItem)) found = true; });
+		if (found) pendingEditItem = null;
+		return found;
+	}
+
+	function schedulePendingEditPrefill() {
+		if (!pendingEditItem) return;
+		if (editPrefillTimer) window.clearTimeout(editPrefillTimer);
+		var attempts = 0;
+		var tryPrefill = function () {
+			if (prefillPendingEditForm() || attempts++ > 30) { editPrefillTimer = null; return; }
+			editPrefillTimer = window.setTimeout(tryPrefill, 100);
+		};
+		tryPrefill();
+	}
+
+	function bindEditPopupSelector() {
+		var selector = config.editPopupSelector || '';
+		if (!selector || !window.JetPopupFrontend || typeof window.JetPopupFrontend.onCustomSelector !== 'function') return;
+		try {
+			window.JetPopupFrontend.onCustomSelector(selector);
+			if (editPopupBindTimer) { window.clearTimeout(editPopupBindTimer); editPopupBindTimer = null; }
+		} catch (error) {
+			if (!editPopupBindTimer) editPopupBindTimer = window.setTimeout(function () { editPopupBindTimer = null; bindEditPopupSelector(); }, 250);
+		}
+	}
+
+	function bindEditPopupPrefillEvents() {
+		if ($ && $.fn) {
+			$(window).off('jet-popup/show-event/after-show.inmovFtthEdit').on('jet-popup/show-event/after-show.inmovFtthEdit', function () {
+				schedulePendingEditPrefill();
+			});
+		}
+	}
+
+	bindEditPopupPrefillEvents();
+
 	function openSheet(map, title, rows, center, options) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
 		if (!sheet || !sheet.querySelector) return;
@@ -1713,7 +1845,7 @@
 				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="center">⌾ <span>Centralizar</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action is-hidden" data-sheet-action="copy-coordinates">▣ <span>Copiar coordenadas</span></button>' +
 			'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="route" aria-label="Abrir rota no Google Maps"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a3 3 0 1 1 0-6h7a3 3 0 1 0 0-6h-1m0 0 3-3m-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="16" r="1.35" fill="currentColor"/></svg><span>Rotas</span></button>' +
-				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit" data-sheet-action="edit">✎ <span>Editar</span></button>' +
+				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit e_pdrf" data-popup="3701" data-sheet-action="edit">✎ <span>Editar</span></button>' +
 			'</div>';
 		container.parentNode.appendChild(sheet);
 		if (!sheet.querySelector) return;
@@ -1737,11 +1869,25 @@
 		if (routeButton && routeButton.addEventListener) routeButton.addEventListener('click', function () { openGoogleMapsRoute(sheet.__inmovFtthRouteCenter || []); });
 		var editButton = sheet.querySelector('[data-sheet-action="edit"]');
 		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function () {
-			var detail = { id: sheet.dataset.itemId || '', code: sheet.dataset.itemCode || '', kind: sheet.dataset.itemKind || '', type: sheet.dataset.itemType || '' };
+			var point = sheet.dataset.itemKind === 'point' ? pointRecords[sheet.dataset.itemId] : null;
+			var detail = point ? editPointPayload(point) : { id: sheet.dataset.itemId || '', code: sheet.dataset.itemCode || '', kind: sheet.dataset.itemKind || '', type: sheet.dataset.itemType || '' };
+			pendingEditItem = detail;
+			window.InmovFtthEditItem = detail;
+			editButton.setAttribute('data-popup', String(config.editPopupId || '3701'));
+			editButton.classList.add('e_pdrf');
+			schedulePendingEditPrefill();
 			try { document.dispatchEvent(new CustomEvent('inmov-ftth:edit-item', { detail: detail })); } catch (error) {}
 			var selector = config.editPopupSelector || '';
-			if (selector) { var trigger = document.querySelector(selector); if (trigger && typeof trigger.click === 'function') trigger.click(); }
+			if (selector) {
+				var trigger = null;
+				try { trigger = editButton.matches && editButton.matches(selector) ? editButton : document.querySelector(selector); } catch (error) {}
+				/* The button itself is the custom-selector trigger. Clicking it again
+				 * would recurse, so only click a separate configured trigger. */
+				if (trigger && trigger !== editButton && typeof trigger.click === 'function') trigger.click();
+				bindEditPopupSelector();
+			}
 		});
+		bindEditPopupSelector();
 		var records = markerRecords(container);
 		createMapInventoryPanel(container, map, function () { return records; });
 		refreshMapData = function (button) {

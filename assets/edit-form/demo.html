@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prévia — formulário de edição FTTH</title>
+    <link rel="stylesheet" href="inmov-ftth-edit-form.css">
+    <style>
+        body { margin: 0; padding: 24px; background: #eaf1f8; }
+        .demo-toolbar { display: flex; flex-wrap: wrap; gap: 10px; max-width: 960px; margin: 0 auto 16px; }
+        .demo-toolbar button { border: 1px solid #bfdbfe; border-radius: 10px; padding: 9px 13px; cursor: pointer; background: #fff; color: #1d4ed8; font: 700 13px system-ui; }
+        .demo-output { max-width: 960px; margin: 16px auto 0; padding: 12px 14px; overflow: auto; border-radius: 12px; background: #0f172a; color: #dbeafe; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="demo-toolbar" aria-label="Escolher exemplo">
+        <button type="button" data-demo-kind="point">Testar ponto</button>
+        <button type="button" data-demo-kind="route">Testar rota</button>
+    </div>
+    <main id="edit-form-demo"></main>
+    <pre id="edit-form-output" class="demo-output" aria-live="polite">O payload da prévia aparecerá aqui.</pre>
+    <script src="inmov-ftth-edit-form.js"></script>
+    <script>
+        (function () {
+            var root = document.getElementById('edit-form-demo');
+            var output = document.getElementById('edit-form-output');
+            var point = { id: 39, code: 'IMP-P-1200D93632', name: 'POP SMT', type: 'pop', locality: 'São Miguel das Matas', address: 'Rua de exemplo', lat: -13.048559, lng: -39.452159, status: 'nativo', capacity: 24, observation: 'Importado de KML/KMZ.' };
+            var route = { id: 12, name: 'FIBRA 24FO - Anel central', locality: 'Jaguaquara', routeType: 'distribuicao', cableType: 'ASU80', fibers: 24, status: 'nativa', lengthM: 1240, observation: 'Trecho de demonstração', geometry: [[-39.96, -13.52], [-39.958, -13.521], [-39.955, -13.522]] };
+            function mount(kind) {
+                var form = InmovFTTHEditForm.create({ root: root, kind: kind, data: kind === 'route' ? route : point, onLocationRequest: function () { output.textContent = 'Evento recebido: selecione uma coordenada no mapa e depois chame form.setLocation(lat, lng).'; }, onGeometryRequest: function () { output.textContent = 'Evento recebido: desenhe a rota e depois chame form.setGeometry([[lng, lat], ...]).'; } });
+                window.demoForm = form;
+            }
+            document.addEventListener('inmov-ftth:edit-preview', function (event) { output.textContent = JSON.stringify(event.detail, null, 2); });
+            document.querySelectorAll('[data-demo-kind]').forEach(function (button) { button.addEventListener('click', function () { mount(button.dataset.demoKind); }); });
+            mount('point');
+        }());
+    </script>
+</body>
+</html>

@@ -1,0 +1,412 @@
+{
+  "blueprintVersion": "1.0.0",
+  "platform": "JetFormBuilder",
+  "purpose": "frontend-edit-of-ftth-cct-items",
+  "status": "blueprint-only",
+  "notIntegrated": true,
+  "notes": [
+    "Este arquivo é uma especificação de montagem e revisão; não é um export nativo do JetFormBuilder.",
+    "A persistência somente deve ser ativada depois de validar o formulário no frontend e as permissões dos técnicos.",
+    "A seleção de coordenadas e a edição de geometria são ganchos para uma integração futura com o mapa."
+  ],
+  "frontendContext": {
+    "itemIdQueryVariable": "ftth_item_id",
+    "itemKindQueryVariable": "ftth_kind",
+    "allowedCapabilities": ["read"],
+    "recommendedAdditionalPermissionCheck": "current_user_can('edit_posts') or a capability própria do provedor"
+  },
+  "forms": [
+    {
+      "key": "inmov_ftth_edit_point",
+      "title": "Editar ponto FTTH",
+      "cct": "pontos_rede_ftth",
+      "displayRule": {
+        "queryVariable": "ftth_kind",
+        "operator": "equal",
+        "value": "point"
+      },
+      "preset": {
+        "source": "custom_content_type",
+        "getItemIdFrom": {
+          "type": "url_query_variable",
+          "key": "ftth_item_id"
+        },
+        "cctValue": "item_id"
+      },
+      "fields": [
+        {
+          "name": "_inmov_item_id",
+          "type": "hidden",
+          "valueSource": "url_query_variable",
+          "valueKey": "ftth_item_id",
+          "map": "item_id_will_update"
+        },
+        {
+          "name": "ponto_codigo",
+          "type": "text",
+          "label": "Código",
+          "required": true,
+          "map": "ponto_codigo"
+        },
+        {
+          "name": "ponto_nome",
+          "type": "text",
+          "label": "Nome exibido",
+          "required": true,
+          "map": "ponto_nome"
+        },
+        {
+          "name": "ponto_tipo",
+          "type": "select",
+          "label": "Tipo de ponto",
+          "required": true,
+          "options": [
+            { "value": "cto", "label": "CTO" },
+            { "value": "olt", "label": "OLT" },
+            { "value": "pop", "label": "POP" },
+            { "value": "caixa_emenda", "label": "Caixa de emenda" },
+            { "value": "splitter", "label": "Splitter" },
+            { "value": "loja", "label": "Loja / sede" },
+            { "value": "poste", "label": "Poste" },
+            { "value": "outro", "label": "Outro ponto" }
+          ],
+          "map": "ponto_tipo"
+        },
+        {
+          "name": "ponto_status",
+          "type": "select",
+          "label": "Situação",
+          "required": true,
+          "options": [
+            { "value": "nativo", "label": "Nativo" },
+            { "value": "planejado", "label": "Planejado" },
+            { "value": "em_implantacao", "label": "Em implantação" },
+            { "value": "manutencao", "label": "Em manutenção" },
+            { "value": "inativo", "label": "Inativo" }
+          ],
+          "map": "ponto_status"
+        },
+        {
+          "name": "ponto_localidade",
+          "type": "text",
+          "label": "Localidade",
+          "required": true,
+          "map": "ponto_localidade"
+        },
+        {
+          "name": "ponto_endereco",
+          "type": "text",
+          "label": "Endereço",
+          "map": "ponto_endereco"
+        },
+        {
+          "name": "ponto_capacidade_portas",
+          "type": "number",
+          "label": "Capacidade / portas",
+          "min": 0,
+          "step": 1,
+          "conditionalVisibility": {
+            "type": "show",
+            "field": "ponto_tipo",
+            "operator": "in_list",
+            "compareValue": ["cto", "olt", "pop", "caixa_emenda"]
+          },
+          "map": "ponto_capacidade_portas"
+        },
+        {
+          "name": "inmov_location_mode",
+          "type": "radio",
+          "label": "Localização",
+          "default": "keep",
+          "options": [
+            { "value": "keep", "label": "Manter posição atual" },
+            { "value": "manual", "label": "Informar coordenadas" },
+            { "value": "map", "label": "Selecionar no mapa" }
+          ],
+          "persist": false
+        },
+        {
+          "name": "ponto_latitude",
+          "type": "number",
+          "label": "Latitude",
+          "step": "any",
+          "min": -90,
+          "max": 90,
+          "conditionalVisibility": {
+            "type": "show",
+            "field": "inmov_location_mode",
+            "operator": "in_list",
+            "compareValue": ["manual", "map"]
+          },
+          "map": "ponto_latitude",
+          "locationBridge": "latitude"
+        },
+        {
+          "name": "ponto_longitude",
+          "type": "number",
+          "label": "Longitude",
+          "step": "any",
+          "min": -180,
+          "max": 180,
+          "conditionalVisibility": {
+            "type": "show",
+            "field": "inmov_location_mode",
+            "operator": "in_list",
+            "compareValue": ["manual", "map"]
+          },
+          "map": "ponto_longitude",
+          "locationBridge": "longitude"
+        },
+        {
+          "name": "inmov_pick_location",
+          "type": "html_button_hook",
+          "label": "Selecionar nova posição no mapa",
+          "conditionalVisibility": {
+            "type": "show",
+            "field": "inmov_location_mode",
+            "operator": "equal",
+            "compareValue": "map"
+          },
+          "persist": false,
+          "event": "inmov-ftth:edit-location-request"
+        },
+        {
+          "name": "ponto_observacao",
+          "type": "textarea",
+          "label": "Observações técnicas",
+          "map": "ponto_observacao"
+        },
+        {
+          "name": "inmov_change_reason",
+          "type": "textarea",
+          "label": "Motivo da alteração",
+          "required": true,
+          "persist": false
+        },
+        {
+          "name": "inmov_reviewed",
+          "type": "checkbox",
+          "label": "Confirmei os dados antes de enviar",
+          "required": true,
+          "persist": false
+        }
+      ],
+      "postSubmitAction": {
+        "type": "insert_update_custom_content_type_item",
+        "contentType": "pontos_rede_ftth",
+        "itemIdField": "_inmov_item_id",
+        "status": "publish",
+        "fieldMap": {
+          "ponto_codigo": "ponto_codigo",
+          "ponto_nome": "ponto_nome",
+          "ponto_tipo": "ponto_tipo",
+          "ponto_localidade": "ponto_localidade",
+          "ponto_endereco": "ponto_endereco",
+          "ponto_latitude": "ponto_latitude",
+          "ponto_longitude": "ponto_longitude",
+          "ponto_status": "ponto_status",
+          "ponto_capacidade_portas": "ponto_capacidade_portas",
+          "ponto_observacao": "ponto_observacao"
+        },
+        "enableOnlyAfterApproval": true
+      }
+    },
+    {
+      "key": "inmov_ftth_edit_route",
+      "title": "Editar rota de fibra",
+      "cct": "rotas_fibra",
+      "displayRule": {
+        "queryVariable": "ftth_kind",
+        "operator": "equal",
+        "value": "route"
+      },
+      "preset": {
+        "source": "custom_content_type",
+        "getItemIdFrom": {
+          "type": "url_query_variable",
+          "key": "ftth_item_id"
+        },
+        "cctValue": "item_id"
+      },
+      "fields": [
+        {
+          "name": "_inmov_item_id",
+          "type": "hidden",
+          "valueSource": "url_query_variable",
+          "valueKey": "ftth_item_id",
+          "map": "item_id_will_update"
+        },
+        {
+          "name": "rota_codigo",
+          "type": "text",
+          "label": "Código da rota",
+          "map": "rota_codigo"
+        },
+        {
+          "name": "rota_nome",
+          "type": "text",
+          "label": "Nome da rota",
+          "required": true,
+          "map": "rota_nome"
+        },
+        {
+          "name": "rota_localidade",
+          "type": "text",
+          "label": "Localidade",
+          "required": true,
+          "map": "rota_localidade"
+        },
+        {
+          "name": "rota_tipo",
+          "type": "select",
+          "label": "Tipo de rota",
+          "required": true,
+          "options": [
+            { "value": "backbone", "label": "Backbone" },
+            { "value": "asu", "label": "ASU" },
+            { "value": "alimentacao", "label": "Alimentação" },
+            { "value": "distribuicao", "label": "Distribuição" },
+            { "value": "drop", "label": "Drop" },
+            { "value": "outro", "label": "Outro tipo" }
+          ],
+          "map": "rota_tipo"
+        },
+        {
+          "name": "rota_tipo_cabo",
+          "type": "text",
+          "label": "Tipo de cabo",
+          "map": "rota_tipo_cabo"
+        },
+        {
+          "name": "rota_quantidade_fibras",
+          "type": "select",
+          "label": "Quantidade de fibras",
+          "required": true,
+          "options": [
+            { "value": "1", "label": "1 FO" },
+            { "value": "2", "label": "2 FO" },
+            { "value": "4", "label": "4 FO" },
+            { "value": "6", "label": "6 FO" },
+            { "value": "12", "label": "12 FO" },
+            { "value": "24", "label": "24 FO" },
+            { "value": "36", "label": "36 FO" },
+            { "value": "48", "label": "48 FO" },
+            { "value": "72", "label": "72 FO" }
+          ],
+          "map": "rota_quantidade_fibras"
+        },
+        {
+          "name": "rota_status",
+          "type": "select",
+          "label": "Situação",
+          "required": true,
+          "options": [
+            { "value": "nativa", "label": "Nativa" },
+            { "value": "planejada", "label": "Planejada" },
+            { "value": "em_implantacao", "label": "Em implantação" },
+            { "value": "manutencao", "label": "Em manutenção" },
+            { "value": "inativa", "label": "Inativa" }
+          ],
+          "map": "rota_status"
+        },
+        {
+          "name": "inmov_geometry_mode",
+          "type": "radio",
+          "label": "Traçado",
+          "default": "keep",
+          "options": [
+            { "value": "keep", "label": "Manter traçado atual" },
+            { "value": "map", "label": "Desenhar novo traçado no mapa" }
+          ],
+          "persist": false
+        },
+        {
+          "name": "rota_geometria_geojson",
+          "type": "textarea",
+          "label": "Geometria GeoJSON",
+          "conditionalVisibility": {
+            "type": "show",
+            "field": "inmov_geometry_mode",
+            "operator": "equal",
+            "compareValue": "map"
+          },
+          "map": "rota_geometria_geojson",
+          "geometryBridge": true,
+          "description": "Será preenchida pela integração do editor de traçado; não editar manualmente no uso normal."
+        },
+        {
+          "name": "inmov_edit_geometry",
+          "type": "html_button_hook",
+          "label": "Editar traçado no mapa",
+          "conditionalVisibility": {
+            "type": "show",
+            "field": "inmov_geometry_mode",
+            "operator": "equal",
+            "compareValue": "map"
+          },
+          "persist": false,
+          "event": "inmov-ftth:edit-geometry-request"
+        },
+        {
+          "name": "rota_comprimento_metros",
+          "type": "number",
+          "label": "Comprimento (m)",
+          "readOnly": true,
+          "description": "Recalcular após uma nova geometria; não confiar em valor digitado pelo usuário.",
+          "map": "rota_comprimento_metros"
+        },
+        {
+          "name": "rota_observacao",
+          "type": "textarea",
+          "label": "Observações técnicas",
+          "map": "rota_observacao"
+        },
+        {
+          "name": "inmov_change_reason",
+          "type": "textarea",
+          "label": "Motivo da alteração",
+          "required": true,
+          "persist": false
+        },
+        {
+          "name": "inmov_reviewed",
+          "type": "checkbox",
+          "label": "Confirmei os dados antes de enviar",
+          "required": true,
+          "persist": false
+        }
+      ],
+      "postSubmitAction": {
+        "type": "insert_update_custom_content_type_item",
+        "contentType": "rotas_fibra",
+        "itemIdField": "_inmov_item_id",
+        "status": "publish",
+        "fieldMap": {
+          "rota_codigo": "rota_codigo",
+          "rota_nome": "rota_nome",
+          "rota_localidade": "rota_localidade",
+          "rota_tipo": "rota_tipo",
+          "rota_tipo_cabo": "rota_tipo_cabo",
+          "rota_quantidade_fibras": "rota_quantidade_fibras",
+          "rota_status": "rota_status",
+          "rota_geometria_geojson": "rota_geometria_geojson",
+          "rota_comprimento_metros": "rota_comprimento_metros",
+          "rota_observacao": "rota_observacao"
+        },
+        "enableOnlyAfterApproval": true
+      }
+    }
+  ],
+  "futureMapBridge": {
+    "point": {
+      "requestEvent": "inmov-ftth:edit-location-request",
+      "responseApi": "form.setLocation(latitude, longitude)",
+      "mustValidate": ["latitude between -90 and 90", "longitude between -180 and 180"]
+    },
+    "route": {
+      "requestEvent": "inmov-ftth:edit-geometry-request",
+      "responseApi": "form.setGeometry([[longitude, latitude], ...])",
+      "mustValidate": ["at least two vertices", "valid GeoJSON LineString", "recalculate length"]
+    }
+  }
+}

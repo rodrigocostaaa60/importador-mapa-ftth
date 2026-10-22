@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.47
+ * Version: 0.10.48
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.47';
+	const VERSION               = '0.10.48';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -185,6 +185,89 @@ final class Inmov_JetEngine_FTTH_Importer {
 			),
 			'callback' => array( $this, 'update_point' ),
 		) );
+		register_rest_route( 'inmov-ftth/v1', '/notifications/permission-denied', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'args'                => array(
+				'point_id' => array(
+					'required'          => true,
+					'sanitize_callback' => 'absint',
+					'validate_callback' => function( $value ) { return (int) $value > 0; },
+				),
+			),
+			'callback'            => array( $this, 'create_permission_notification' ),
+		) );
+	}
+
+	/**
+	 * Record an attempted point edit in the site's JetEngine notification CCT.
+	 *
+	 * The notification is addressed to the logged-in user who attempted the
+	 * edit, so the existing notification widget can display it using the same
+	 * recipient rules as the other system notifications. A short transient
+	 * prevents repeated clicks from flooding that CCT.
+	 */
+	public function create_permission_notification( WP_REST_Request $request ) {
+		$user_id  = get_current_user_id();
+		$point_id = absint( $request->get_param( 'point_id' ) );
+		if ( ! $user_id || ! $point_id ) {
+			return new WP_Error( 'inmov_ftth_notification_invalid_request', 'Não foi possível identificar o usuário ou o ponto.', array( 'status' => 400 ) );
+		}
+
+		$dedupe_key = 'inmov_ftth_permission_notice_' . $user_id . '_' . $point_id;
+		if ( get_transient( $dedupe_key ) ) {
+			return rest_ensure_response( array( 'created' => false, 'deduplicated' => true ) );
+		}
+
+		$point_name  = sanitize_text_field( $request->get_param( 'point_name' ) );
+		$point_code  = sanitize_text_field( $request->get_param( 'point_code' ) );
+		$locality    = sanitize_text_field( $request->get_param( 'locality' ) );
+		$user        = wp_get_current_user();
+		$display     = $user->display_name ?: $user->user_login;
+		$description = $point_name ?: ( $point_code ?: 'ponto #' . $point_id );
+		if ( $point_code && $point_code !== $description ) {
+			$description .= ' (' . $point_code . ')';
+		}
+		if ( $locality ) {
+			$description .= ' — ' . $locality;
+		}
+
+		$type = $this->cct_type( 'pj_notificacoes' );
+		if ( ! $type || ! method_exists( $type, 'get_item_handler' ) ) {
+			return new WP_Error( 'inmov_ftth_notification_cct_unavailable', 'O CCT de notificações do sistema não está disponível.', array( 'status' => 503 ) );
+		}
+
+		$data = array(
+			'notificacao_titulo'       => 'Edição de ponto sem permissão',
+			'notificacao_mensagem'     => sprintf( '%s tentou editar o ponto “%s”, mas não possui permissão para editar pontos da rede.', $display, $description ),
+			'notificacao_tipo'         => 'alerta',
+			'notificacao_prioridade'   => 'normal',
+			'notificacao_destino_tipo' => 'usuario',
+			'notificacao_usuarios_ids' => ',' . $user_id . ',',
+			'notificacao_setores_ids'  => '',
+			'notificacao_perfis'       => '',
+			'notificacao_objeto_tipo'  => 'pontos_rede_ftth',
+			'notificacao_objeto_id'    => $point_id,
+			'notificacao_url'          => home_url( '/mapa-da-rede-ftth/' ),
+			'notificacao_criada_por'   => $user_id,
+			'notificacao_criada_em'    => current_time( 'Y-m-d\\TH:i' ),
+			'notificacao_expira_em'    => '1970-01-01T00:00',
+			'notificacao_status'       => 'ativa',
+			'notificacao_dispensavel'  => '1',
+			'notificacao_exige_ciencia'=> '0',
+		);
+
+		try {
+			$notification_id = $type->get_item_handler()->update_item( $data );
+		} catch ( Throwable $error ) {
+			return new WP_Error( 'inmov_ftth_notification_create_failed', $error->getMessage(), array( 'status' => 500 ) );
+		}
+		if ( is_wp_error( $notification_id ) || ! $notification_id ) {
+			return new WP_Error( 'inmov_ftth_notification_create_failed', 'O JetEngine não confirmou a criação da notificação.', array( 'status' => 500 ) );
+		}
+
+		set_transient( $dedupe_key, 1, 5 * MINUTE_IN_SECONDS );
+		return rest_ensure_response( array( 'created' => true, 'notification_id' => (int) $notification_id ) );
 	}
 
 	/**
@@ -546,6 +629,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'endpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes' ) ),
 				'pointsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
 				'pointUpdateEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points/' ) ),
+				'permissionNotificationEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/permission-denied' ) ),
 				'editPopupSelector' => '.e_pdrf',
 				'editPopupId' => 3701,
 				'editFormId' => 3699,

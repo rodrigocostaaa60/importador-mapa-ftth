@@ -30,6 +30,7 @@
 	var editPrefillTimer = null;
 	var editPopupBindTimer = null;
 	var nativeEditPanel = null;
+	var permissionNotificationPromises = {};
 	var defaultMapStyle = 'mapbox://styles/mapbox/outdoors-v12';
 	// streets-v12 is a standard street style; satellite-streets-v12 is the
 	// Mapbox style that actually provides satellite imagery.
@@ -1166,8 +1167,34 @@
 		return config.canEditPoints === true;
 	}
 
+	function recordEditPermissionNotification(point) {
+		if (!point || !config.permissionNotificationEndpoint || typeof window.fetch !== 'function') return Promise.resolve(false);
+		var pointId = String(point.id || point._ID || '');
+		if (!pointId) return Promise.resolve(false);
+		if (permissionNotificationPromises[pointId]) return permissionNotificationPromises[pointId];
+		var headers = { 'Content-Type': 'application/json' };
+		if (config.nonce) headers['X-WP-Nonce'] = config.nonce;
+		var request = window.fetch(config.permissionNotificationEndpoint, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: headers,
+			body: JSON.stringify({
+				point_id: pointId,
+				point_name: point.name || point.code || '',
+				point_code: point.code || '',
+				locality: point.locality || ''
+			})
+		}).then(function (response) {
+			if (!response || !response.ok) return false;
+			return response.json().then(function (data) { return !!(data && (data.created || data.deduplicated)); }, function () { return true; });
+		}).catch(function () { return false; });
+		permissionNotificationPromises[pointId] = request;
+		request.then(function () { delete permissionNotificationPromises[pointId]; }, function () { delete permissionNotificationPromises[pointId]; });
+		return request;
+	}
+
 	function showEditPermissionNotice(sheet) {
-		if (!sheet || !sheet.appendChild) return;
+		if (!sheet || !sheet.appendChild) return null;
 		var notice = sheet.querySelector('.inmov-ftth-map-sheet__permission-notice');
 		if (!notice) {
 			notice = document.createElement('div');
@@ -1183,6 +1210,12 @@
 			notice.classList.remove('is-visible');
 			notice.__inmovFtthTimer = null;
 		}, 4200);
+		return notice;
+	}
+
+	function markPermissionNotificationRecorded(notice) {
+		if (!notice || !notice.classList || !notice.classList.contains('is-visible')) return;
+		notice.innerHTML = '<span aria-hidden="true">🔒</span><span>Sem permissão para editar. O aviso foi registrado nas notificações.</span>';
 	}
 
 	function hideEditPermissionNotice(sheet) {
@@ -2132,7 +2165,10 @@
 			if (event && event.preventDefault) event.preventDefault();
 			if (event && event.stopPropagation) event.stopPropagation();
 			if (!canEditPoints()) {
-				showEditPermissionNotice(sheet);
+				var permissionNotice = showEditPermissionNotice(sheet);
+				recordEditPermissionNotification(point).then(function (recorded) {
+					if (recorded) markPermissionNotificationRecorded(permissionNotice);
+				});
 				return;
 			}
 			openNativeEditPanel(container, map, point);

@@ -757,6 +757,14 @@
 		else window.setTimeout(trigger, 350);
 	}
 
+	function shouldAutoLocateMap() {
+		// Desktop maps open immediately at the network overview. Keep the
+		// automatic GPS request for phones/tablets, where the location button is
+		// the expected first interaction and the viewport is much smaller.
+		if (!window.matchMedia) return true;
+		try { return window.matchMedia('(max-width: 1023px)').matches; } catch (error) { return true; }
+	}
+
 	function getOverviewZoom(map) {
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var width = container && container.clientWidth ? container.clientWidth : 600;
@@ -1595,7 +1603,7 @@
 			map.on('resize', function () { scheduleFullMarkerVisibility(map); });
 			if (typeof map.loaded === 'function' && map.loaded()) applyInitialNetworkOverview(map);
 			else if (typeof map.once === 'function') map.once('load', function () { applyInitialNetworkOverview(map); });
-			if (nativeLocationControl && map.__inmovFtthGeolocateControl) startNativeGeolocation(map, map.__inmovFtthGeolocateControl);
+			if (nativeLocationControl && map.__inmovFtthGeolocateControl && shouldAutoLocateMap()) startNativeGeolocation(map, map.__inmovFtthGeolocateControl);
 		} catch (error) {}
 		var wrap = document.createElement('div');
 		wrap.className = 'inmov-ftth-point-search mapboxgl-ctrl';

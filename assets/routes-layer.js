@@ -381,21 +381,50 @@
 		return active;
 	}
 
-	function getSheetOffset(map) {
+	/* Returns the part of the map that remains visible after the desktop side
+	 * drawer or mobile bottom sheet is opened. Side drawers consume horizontal
+	 * space; bottom sheets consume vertical space. Keeping that distinction in
+	 * one helper prevents each centering path from inventing its own offset. */
+	function getMapVisibleArea(map) {
 		resetMapShellScroll(map);
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
-		var panel = getActiveMapPanel();
-		if (!container || !panel || !container.getBoundingClientRect) return [0, 0];
+		if (!container || !container.getBoundingClientRect) return null;
 		var mapRect = container.getBoundingClientRect();
-		var panelRect = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+		if (!mapRect || mapRect.width <= 0 || mapRect.height <= 0) return null;
+		var panel = getActiveMapPanel();
+		var panelRect = panel && panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+		var isDesktopViewport = window.matchMedia && window.matchMedia('(min-width: 1024px)').matches;
 		var isMobileViewport = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-		if (!isMobileViewport && panelRect && panelRect.width < mapRect.width * 0.8) return [0, 0];
-		var search = document.querySelector('.inmov-ftth-point-search');
-		var searchBottom = search && search.getBoundingClientRect ? search.getBoundingClientRect().bottom - mapRect.top : 0;
-		var visibleTop = Math.max(8, searchBottom + 8);
-		var visibleBottom = panelRect ? Math.min(mapRect.height - 8, panelRect.top - mapRect.top - 8) : mapRect.height - 8;
-		if (visibleBottom <= visibleTop) return [0, -Math.min(120, mapRect.height * 0.2)];
-		return [0, ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2)];
+		var sidePanel = isDesktopViewport && !isMobileViewport && panelRect && panelRect.width > 0 && panelRect.width < mapRect.width * 0.8;
+		var visibleLeft = 8;
+		var visibleRight = mapRect.width - 8;
+		var visibleTop = 8;
+		var visibleBottom = mapRect.height - 8;
+		if (sidePanel) {
+			var panelLeft = panelRect.left - mapRect.left;
+			var panelRight = panelRect.right - mapRect.left;
+			var panelCenter = (panelLeft + panelRight) / 2;
+			if (panelCenter <= mapRect.width / 2) visibleLeft = Math.max(8, panelRight + 8);
+			else visibleRight = Math.min(mapRect.width - 8, panelLeft - 8);
+		} else {
+			var search = document.querySelector('.inmov-ftth-point-search');
+			var searchBottom = search && search.getBoundingClientRect ? search.getBoundingClientRect().bottom - mapRect.top : 0;
+			visibleTop = Math.max(8, searchBottom + 8);
+			if (panelRect) visibleBottom = Math.min(mapRect.height - 8, panelRect.top - mapRect.top - 8);
+		}
+		return { mapRect: mapRect, visibleLeft: visibleLeft, visibleRight: visibleRight, visibleTop: visibleTop, visibleBottom: visibleBottom, sidePanel: sidePanel };
+	}
+
+	function getMapVisibleOffset(map) {
+		var area = getMapVisibleArea(map);
+		if (!area || area.visibleBottom <= area.visibleTop || area.visibleRight <= area.visibleLeft) return [0, 0];
+		return [((area.visibleLeft + area.visibleRight) / 2) - (area.mapRect.width / 2), ((area.visibleTop + area.visibleBottom) / 2) - (area.mapRect.height / 2)];
+	}
+
+	function getSheetOffset(map) {
+		var area = getMapVisibleArea(map);
+		if (!area || area.visibleBottom <= area.visibleTop || area.visibleRight <= area.visibleLeft) return [0, -Math.min(120, (area && area.mapRect ? area.mapRect.height : 600) * 0.2)];
+		return getMapVisibleOffset(map);
 	}
 
 	/* Centraliza um item na área realmente disponível do mapa. O painel inferior
@@ -419,17 +448,9 @@
 			if (map.__inmovFtthFocusState !== focusState) return;
 			resetMapShellScroll(map);
 			var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
-			var offset = [0, 0];
+			var offset = getMapVisibleOffset(map);
 			var activePanel = getActiveMapPanel();
 			var inventoryOpen = !!(activePanel && activePanel.classList && activePanel.classList.contains('inmov-ftth-map-inventory-panel'));
-			if (container && container.getBoundingClientRect) {
-				var mapRect = container.getBoundingClientRect();
-				var search = document.querySelector('.inmov-ftth-point-search');
-				var panel = getActiveMapPanel();
-				var visibleTop = search && search.getBoundingClientRect ? Math.max(8, search.getBoundingClientRect().bottom - mapRect.top + 8) : 8;
-				var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
-				if (visibleBottom > visibleTop) offset[1] = ((visibleTop + visibleBottom) / 2) - (mapRect.height / 2);
-			}
 			/* Inventory selections are already made with the sheet open. Do not start
 			 * another animated flight here: the sheet transition and the previous city
 			 * fit can otherwise compete for moveend and leave the item under search. */
@@ -446,13 +467,11 @@
 					var activeInventoryPanel = getActiveMapPanel();
 					var currentMapRect = container && container.getBoundingClientRect ? container.getBoundingClientRect() : null;
 					if (activeInventoryPanel && currentMapRect && currentMapRect.width > 0 && currentMapRect.height > 0) {
-						var currentSearch = document.querySelector('.inmov-ftth-point-search');
-						var currentTop = currentSearch && currentSearch.getBoundingClientRect ? Math.max(8, currentSearch.getBoundingClientRect().bottom - currentMapRect.top + 8) : 8;
-						var currentBottom = activeInventoryPanel.getBoundingClientRect ? Math.min(currentMapRect.height - 8, activeInventoryPanel.getBoundingClientRect().top - currentMapRect.top - 8) : currentMapRect.height - 8;
-						if (currentBottom > currentTop) {
+						var currentArea = getMapVisibleArea(map);
+						if (currentArea && currentArea.visibleBottom > currentArea.visibleTop && currentArea.visibleRight > currentArea.visibleLeft) {
 							var currentPoint = map.project({ lng: target[0], lat: target[1] });
-							var desiredX = currentMapRect.width / 2;
-							var desiredY = (currentTop + currentBottom) / 2;
+							var desiredX = (currentArea.visibleLeft + currentArea.visibleRight) / 2;
+							var desiredY = (currentArea.visibleTop + currentArea.visibleBottom) / 2;
 							var currentZoom = typeof map.getZoom === 'function' ? Number(map.getZoom()) : Number(zoom);
 							var zoomMatches = !Number.isFinite(currentZoom) || Math.abs(currentZoom - Number(zoom)) < 0.02;
 							if (zoomMatches && Math.abs(currentPoint.x - desiredX) < 6 && Math.abs(currentPoint.y - desiredY) < 6) return;
@@ -461,21 +480,21 @@
 					map.jumpTo({ center: target, zoom: zoom, padding: 0, essential: options.essential !== false });
 					var correctInventoryPosition = function () {
 						if (map.__inmovFtthFocusState !== focusState || !container || !container.getBoundingClientRect) return;
-						var mapRect = container.getBoundingClientRect();
-						var search = document.querySelector('.inmov-ftth-point-search');
 						var panel = getActiveMapPanel();
 						if (!panel || !panel.classList || !panel.classList.contains('inmov-ftth-map-inventory-panel')) return;
-						var visibleTop = search && search.getBoundingClientRect ? Math.max(8, search.getBoundingClientRect().bottom - mapRect.top + 8) : 8;
-						var visibleBottom = panel && panel.getBoundingClientRect ? Math.min(mapRect.height - 8, panel.getBoundingClientRect().top - mapRect.top - 8) : mapRect.height - 8;
-						if (visibleBottom <= visibleTop) return;
+						var mapRect = container.getBoundingClientRect();
+						var area = getMapVisibleArea(map);
+						if (!area || area.visibleBottom <= area.visibleTop || area.visibleRight <= area.visibleLeft) return;
 						var point = map.project({ lng: target[0], lat: target[1] });
-						var desiredY = (visibleTop + visibleBottom) / 2;
+						var desiredX = (area.visibleLeft + area.visibleRight) / 2;
+						var desiredY = (area.visibleTop + area.visibleBottom) / 2;
+						var deltaX = desiredX - point.x;
 						var deltaY = desiredY - point.y;
-						if (Math.abs(deltaY) < 3 || Math.abs(deltaY) > mapRect.height * 0.9) return;
+						if ((Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) || Math.abs(deltaX) > mapRect.width * 0.9 || Math.abs(deltaY) > mapRect.height * 0.9) return;
 						/* Mapbox moves the map canvas in the requested direction, so the
 						 * feature moves by the opposite amount. Invert the correction to
 						 * place the item at the calculated midpoint. */
-						try { map.panBy([0, -deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([0, -deltaY], { duration: 0 }); } catch (ignored) {} }
+						try { map.panBy([-deltaX, -deltaY], { duration: 0, essential: true }); } catch (error) { try { map.panBy([-deltaX, -deltaY], { duration: 0 }); } catch (ignored) {} }
 					};
 					if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(correctInventoryPosition);
 					else if (typeof window.setTimeout === 'function') window.setTimeout(correctInventoryPosition, 0);
@@ -1031,10 +1050,18 @@
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		if (!container || !container.getBoundingClientRect) return { top: 24, right: 24, bottom: 24, left: 24 };
 		var mapRect = container.getBoundingClientRect();
+		var panel = getActiveMapPanel();
+		var panelRect = panel && panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+		var isDesktopViewport = window.matchMedia && window.matchMedia('(min-width: 1024px)').matches;
+		var isMobileViewport = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+		if (isDesktopViewport && !isMobileViewport && panelRect && panelRect.width > 0 && panelRect.width < mapRect.width * 0.8) {
+			var panelCenter = ((panelRect.left - mapRect.left) + (panelRect.right - mapRect.left)) / 2;
+			if (panelCenter <= mapRect.width / 2) return { top: 24, right: 24, bottom: 24, left: Math.max(24, panelRect.right - mapRect.left + 18) };
+			return { top: 24, right: Math.max(24, mapRect.right - panelRect.left + 18), bottom: 24, left: 24 };
+		}
 		var search = document.querySelector('.inmov-ftth-point-search');
 		var top = search && search.getBoundingClientRect ? Math.max(24, search.getBoundingClientRect().bottom - mapRect.top + 18) : 24;
-		var panel = getActiveMapPanel();
-		var bottom = panel && panel.getBoundingClientRect ? Math.max(24, mapRect.bottom - panel.getBoundingClientRect().top + 18) : 24;
+		var bottom = panelRect ? Math.max(24, mapRect.bottom - panelRect.top + 18) : 24;
 		return { top: top, right: 24, bottom: bottom, left: 24 };
 	}
 

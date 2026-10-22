@@ -660,3 +660,115 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   pointer-events:none;
  }
 }
+
+/* Desktop refinement: keep the map open on the right while the application
+ * surfaces use compact Google-like controls on the left. This block is kept
+ * outside the mobile rules on purpose; phones retain their existing layout. */
+.inmov-ftth-map-shell .inmov-ftth-map-quick-filters{display:none!important}
+@media(min-width:1024px){
+ .inmov-ftth-map-shell .inmov-ftth-point-search{
+  width:min(390px,calc(100% - 48px));
+  max-width:390px;
+  border-radius:16px;
+ }
+ .inmov-ftth-map-shell .inmov-ftth-point-search input{
+  min-height:50px;
+  padding:11px 46px 11px 50px;
+  border-radius:14px;
+  font-size:15px;
+ }
+ .inmov-ftth-map-shell .inmov-ftth-point-search:before{top:25px;left:19px}
+ .inmov-ftth-map-shell .inmov-ftth-point-search:after{top:25px;right:14px}
+ .inmov-ftth-map-shell .inmov-ftth-map-legend{
+  top:84px;
+  left:24px;
+  max-width:min(390px,calc(100% - 48px));
+ }
+
+ /* Mapbox puts every control in one top-right stack. Make that stack a
+  * transparent positioning layer so native navigation stays top-right while
+  * the three secondary actions can sit compactly at bottom-left. */
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right{
+  inset:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  display:block;
+  pointer-events:none;
+ }
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.mapboxgl-ctrl{
+  pointer-events:auto;
+  float:none!important;
+  margin:0!important;
+ }
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.mapboxgl-ctrl-group:not(.inmov-ftth-globe-control):not(.inmov-ftth-layers-control):not(.inmov-ftth-refresh-control):not(.inmov-ftth-geolocate-control){
+  position:absolute;
+  top:20px;
+  right:24px;
+  z-index:2001;
+ }
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-geolocate-control{
+  position:absolute;
+  top:178px;
+  right:24px;
+  z-index:2001;
+ }
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-globe-control,
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-layers-control,
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-refresh-control{
+  position:absolute;
+  bottom:98px;
+  z-index:5050;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+ }
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-globe-control{left:24px}
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-layers-control{left:66px}
+ .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-refresh-control{left:108px}
+ .inmov-ftth-map-shell .inmov-ftth-globe-control__button,
+ .inmov-ftth-map-shell .inmov-ftth-map-control__button{
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  padding:0;
+  border:1px solid #dbe4ef;
+  border-radius:10px;
+  background:rgba(255,255,255,.97);
+  color:#64748b;
+  box-shadow:0 4px 12px rgba(15,23,42,.14);
+ }
+ .inmov-ftth-map-shell .inmov-ftth-globe-control__button{font-size:14px}
+ .inmov-ftth-map-shell .inmov-ftth-map-control__button svg{width:17px;height:17px}
+ .inmov-ftth-map-shell .inmov-ftth-globe-control__button:hover,
+ .inmov-ftth-map-shell .inmov-ftth-map-control__button:hover,
+ .inmov-ftth-map-shell .inmov-ftth-map-control__button.is-active{border-color:#b9d1ed;background:#eaf3ff;color:#0057b8}
+
+ /* Drawers grow to their content but stop short of covering the full map. */
+ .inmov-ftth-map-shell .inmov-ftth-map-style-panel,
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel{
+  top:88px;
+  right:auto;
+  bottom:auto;
+  left:24px;
+  height:auto!important;
+  max-height:min(680px,calc(100% - 120px));
+ }
+ .inmov-ftth-map-shell .inmov-ftth-map-style-panel{overflow-y:auto}
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel{overflow:hidden}
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body{min-height:0;overflow-y:auto}
+
+ /* Details occupy the left reading column and cover the menu dock when open;
+  * the visible map is therefore the area to their right. */
+ .inmov-ftth-map-shell .inmov-ftth-map-sheet{
+  top:88px;
+  right:auto;
+  bottom:auto;
+  left:24px;
+  width:min(470px,calc(100% - 48px));
+  max-height:calc(100% - 112px);
+  z-index:6000!important;
+ }
+ .inmov-ftth-map-shell .inmov-ftth-map-sheet.is-expanded{max-height:calc(100% - 104px)}
+}

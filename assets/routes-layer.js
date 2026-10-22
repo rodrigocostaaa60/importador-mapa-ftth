@@ -1238,7 +1238,10 @@
 						host.classList.toggle('inmov-ftth-map-shell--inventory-open', inventoryOpen);
 					}
 				}
-				if (action === 'refresh') { var refresh = host.querySelector('.inmov-ftth-refresh-control button'); if (refresh) refresh.click(); }
+				if (action === 'refresh') {
+					var refreshMap = map && map.__inmovFtthRefreshData;
+					if (typeof refreshMap === 'function') refreshMap(button);
+				}
 			});
 		});
 	}
@@ -1458,31 +1461,6 @@
 		var refreshMapData = null;
 		try {
 			if (typeof window.mapboxgl.NavigationControl === 'function') map.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
-			var globeControl = {
-				onAdd: function (mapInstance) {
-					this._map = mapInstance;
-					this._container = document.createElement('div');
-					this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group inmov-ftth-globe-control';
-					this._button = document.createElement('button');
-					this._button.type = 'button';
-					this._button.className = 'inmov-ftth-globe-control__button';
-					this._button.innerHTML = '<span aria-hidden="true">🌐</span>';
-					this._button.setAttribute('aria-label', 'Abrir opções de mapa');
-					this._button.title = 'Opções de mapa';
-					this._button.addEventListener('click', function (event) {
-						if (event && event.stopPropagation) event.stopPropagation();
-						var panel = container.parentNode && container.parentNode.querySelector('.inmov-ftth-map-style-panel');
-						if (panel) { var open = !panel.classList.contains('is-open'); panel.classList.toggle('is-open', open); panel.setAttribute('aria-hidden', open ? 'false' : 'true'); var shell = panel.closest && panel.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.toggle('inmov-ftth-map-shell--panel-open', open); }
-					}.bind(this._button));
-					this._container.appendChild(this._button);
-					return this._container;
-				},
-				onRemove: function () {
-					if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container);
-					this._map = null;
-				}
-			};
-			if (typeof window.mapboxgl.Control === 'function' || globeControl.onAdd) map.addControl(globeControl, 'top-right');
 			if (typeof window.mapboxgl.GeolocateControl === 'function') {
 				var geolocateControl = new window.mapboxgl.GeolocateControl({
 					positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true
@@ -1497,59 +1475,6 @@
 				nativeLocationControl = true;
 				map.__inmovFtthGeolocateControl = geolocateControl;
 			}
-			var layersControl = {
-				onAdd: function (mapInstance) {
-					this._map = mapInstance;
-					this._container = document.createElement('div');
-					this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group inmov-ftth-layers-control';
-					this._button = document.createElement('button');
-					this._button.type = 'button';
-					this._button.className = 'inmov-ftth-map-control__button';
-					this._button.setAttribute('aria-label', 'Alternar legenda técnica');
-					this._button.title = 'Alternar legenda técnica';
-					this._button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-					this._button.addEventListener('click', function (event) {
-						if (event && event.stopPropagation) event.stopPropagation();
-						var legend = container.parentNode && container.parentNode.querySelector('.inmov-ftth-map-legend');
-						if (!legend) return;
-						var hidden = legend.classList.toggle('is-hidden');
-						this.classList.toggle('is-active', !hidden);
-					}.bind(this._button));
-					this._container.appendChild(this._button);
-					return this._container;
-				},
-				onRemove: function () { if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container); this._map = null; }
-			};
-			map.addControl(layersControl, 'top-right');
-			var refreshControl = {
-				onAdd: function (mapInstance) {
-					this._map = mapInstance;
-					this._container = document.createElement('div');
-					this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group inmov-ftth-refresh-control';
-					this._button = document.createElement('button');
-					this._button.type = 'button';
-					this._button.className = 'inmov-ftth-map-control__button';
-					this._button.setAttribute('aria-label', 'Atualizar dados da rede');
-					this._button.title = 'Atualizar dados da rede';
-					this._button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-13.6-5.7L4 7.7M4 4v3.7h3.7M4 13a8 8 0 0 0 13.6 5.7L20 16.3M20 20v-3.7h-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-					this._button.addEventListener('click', function (event) {
-						if (event && event.stopPropagation) event.stopPropagation();
-						if (typeof mapInstance.__inmovFtthRefreshData === 'function') mapInstance.__inmovFtthRefreshData(this);
-						else {
-							this.classList.add('is-loading');
-							routeData = null;
-							requestPromise = null;
-							fetchRoutes().then(function (data) {
-								if (data && mapInstance.getSource && mapInstance.getSource(sourceId) && mapInstance.getSource(sourceId).setData) mapInstance.getSource(sourceId).setData(data);
-							}).finally(function () { window.setTimeout(function () { this.classList.remove('is-loading'); }.bind(this), 350); }.bind(this));
-						}
-					}.bind(this._button));
-					this._container.appendChild(this._button);
-					return this._container;
-				},
-				onRemove: function () { if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container); this._map = null; }
-			};
-			map.addControl(refreshControl, 'top-right');
 			map.on('geolocate', function (event) {
 				if (event && Number.isFinite(event.longitude) && Number.isFinite(event.latitude) && typeof map.flyTo === 'function') {
 					userPosition = [event.longitude, event.latitude];

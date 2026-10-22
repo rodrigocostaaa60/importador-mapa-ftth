@@ -743,11 +743,11 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.mapboxgl-ctrl-group:not(.inmov-ftth-geolocate-control){
   position:absolute;
   top:auto;
-  right:24px;
-   bottom:92px;
+   right:20px;
+    bottom:82px;
   left:auto;
   z-index:2001;
-   gap:4px!important;
+    gap:2px!important;
    padding:0!important;
    border:0!important;
    border-radius:0!important;
@@ -758,8 +758,8 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-geolocate-control{
   position:absolute;
   top:auto;
-  right:24px;
-   bottom:calc(92px + 110px + 12px);
+   right:20px;
+    bottom:calc(82px + 94px + 10px);
   left:auto;
   z-index:2001;
   border:0!important;
@@ -767,9 +767,9 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   box-shadow:none!important;
  }
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.mapboxgl-ctrl-group:not(.inmov-ftth-geolocate-control) button{
-  width:34px;
-  height:34px;
-  border-radius:10px;
+   width:30px;
+   height:30px;
+   border-radius:9px;
    display:grid;
    place-items:center;
    box-sizing:border-box;
@@ -784,8 +784,8 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-geolocate-control .mapboxgl-ctrl-geolocate{
   display:grid;
   place-items:center;
-  width:42px;
-  height:42px;
+   width:40px;
+   height:40px;
   padding:0;
   border:0!important;
   outline:0!important;

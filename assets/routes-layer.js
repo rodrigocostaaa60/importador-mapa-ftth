@@ -1535,8 +1535,8 @@
 			});
 			map.on('trackuserlocationstart', function () { enableDeviceOrientation(map); });
 			map.on('trackuserlocationend', function () { map.__inmovFtthOrientationEnabled = false; });
-			map.on('mousedown', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; setMapMotionState(map, true); });
-			map.on('touchstart', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; setMapMotionState(map, true); });
+			map.on('mousedown', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; });
+			map.on('touchstart', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; });
 			map.on('dragstart', function () {
 				map.__inmovFtthOrientationEnabled = false;
 				map.__inmovFtthMapMoved = true;

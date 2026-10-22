@@ -82,15 +82,6 @@
  .inmov-ftth-map-sheet__action{flex:1;min-height:38px}
 }
 
-/* Keep the map lightweight while the user pans or zooms. Marker paint is
- * suspended only after drag/zoom starts, so a simple click remains clickable;
- * everything is restored on moveend/zoomend. */
-.inmov-ftth-map-shell--map-moving .mapboxgl-marker,
-.inmov-ftth-map-shell--map-moving .jet-map-marker,
-.inmov-ftth-map-shell--map-moving .inmov-ftth-point-cluster{
- visibility:hidden!important;
-}
-
 /* O corpo do painel é flexível e cada cartão cresce com o conteúdo.
  * Isso evita que observações longas sejam cortadas pela altura mínima da
  * linha ou pelo cálculo de altura do grid em telas menores. */

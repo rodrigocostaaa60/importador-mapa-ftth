@@ -178,13 +178,9 @@
 			var marker = item.marker;
 			if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
 			var element = marker.getElement();
-			var visible = false;
-			try {
-				var position = marker.getLngLat();
-				visible = southWest && northEast
-					? position.lat >= southWest.lat - latMargin && position.lat <= northEast.lat + latMargin && position.lng >= southWest.lng - lngMargin && position.lng <= northEast.lng + lngMargin
-					: bounds.contains(position);
-			} catch (error) {}
+			var visible = southWest && northEast
+				? markerIsInsideBounds(marker, southWest, northEast, latMargin, lngMargin)
+				: (bounds && typeof bounds.contains === 'function' ? bounds.contains(marker.getLngLat()) : false);
 			if (element && element.classList) {
 				var hidden = element.classList.contains('inmov-ftth-point-marker--offscreen');
 				if (hidden === visible) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
@@ -222,6 +218,7 @@
 		map.__inmovMarkerFullRefreshPending = true;
 		var refresh = function () {
 			map.__inmovMarkerFullRefreshPending = false;
+			syncMountedMarkers(map);
 			updateMarkerVisibility(map);
 		};
 		if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(refresh);
@@ -229,11 +226,42 @@
 		else refresh();
 	}
 
-	function setMapMotionState(map, moving) {
-		if (!map || typeof map.getContainer !== 'function') return;
-		var container = map.getContainer();
-		var shell = container && container.parentNode;
-		if (shell && shell.classList) shell.classList.toggle('inmov-ftth-map-shell--map-moving', !!moving);
+	function markerIsInsideBounds(marker, southWest, northEast, latMargin, lngMargin) {
+		if (!marker || typeof marker.getLngLat !== 'function' || !southWest || !northEast) return false;
+		try {
+			var position = marker.getLngLat();
+			return position.lat >= southWest.lat - latMargin && position.lat <= northEast.lat + latMargin && position.lng >= southWest.lng - lngMargin && position.lng <= northEast.lng + lngMargin;
+		} catch (error) { return false; }
+	}
+
+	/* JetEngine creates one Mapbox HTML marker per point. Keeping hundreds of
+	 * off-screen DOM nodes mounted makes Mapbox reposition all of them during
+	 * every camera frame, even when they are hidden with CSS. Keep a generous
+	 * viewport margin and unmount only markers safely outside it. The marker
+	 * objects, handlers and records remain intact and are mounted again when a
+	 * later camera position needs them. */
+	function syncMountedMarkers(map) {
+		var entries = markerEntriesForMap(map);
+		if (!map || entries.length < 120 || typeof map.getBounds !== 'function') return;
+		var bounds;
+		try { bounds = map.getBounds(); } catch (error) { return; }
+		var southWest = bounds && bounds.getSouthWest ? bounds.getSouthWest() : null;
+		var northEast = bounds && bounds.getNorthEast ? bounds.getNorthEast() : null;
+		if (!southWest || !northEast) return;
+		var latMargin = Math.max(0.004, (northEast.lat - southWest.lat) * 1.5);
+		var lngMargin = Math.max(0.004, (northEast.lng - southWest.lng) * 1.5);
+		entries.forEach(function (item) {
+			var marker = item && item.marker;
+			if (!marker || typeof marker.getLngLat !== 'function') return;
+			var inside = markerIsInsideBounds(marker, southWest, northEast, latMargin, lngMargin);
+			var mounted = marker._map === map;
+			if (inside && !mounted && marker.__inmovFtthVirtualized && typeof marker.addTo === 'function') {
+				try { marker.addTo(map); mounted = marker._map === map; } catch (error) {}
+			}
+			if (!inside && mounted && marker !== selectedPointElement && typeof marker.remove === 'function') {
+				try { marker.remove(); marker.__inmovFtthVirtualized = true; } catch (error) {}
+			}
+		});
 	}
 
 	function updatePointClusters(map) {
@@ -1540,15 +1568,14 @@
 			map.on('dragstart', function () {
 				map.__inmovFtthOrientationEnabled = false;
 				map.__inmovFtthMapMoved = true;
-				setMapMotionState(map, true);
+				syncMountedMarkers(map);
 			});
 			map.on('dragend', function () { map.__inmovFtthMapPointerActive = false; });
-			map.on('zoomstart', function () { map.__inmovFtthMapPointerActive = true; setMapMotionState(map, true); });
+			map.on('zoomstart', function () { map.__inmovFtthMapPointerActive = true; syncMountedMarkers(map); });
 			map.on('click', function (event) {
 				var moved = !!map.__inmovFtthMapMoved;
 				map.__inmovFtthMapPointerActive = false;
 				map.__inmovFtthMapMoved = false;
-				setMapMotionState(map, false);
 				if (moved) return;
 				var originalTarget = event && event.originalEvent && event.originalEvent.target;
 				hideMapSearch(map);
@@ -1563,8 +1590,8 @@
 				var legend = document.querySelector('.inmov-ftth-map-legend:not(.is-hidden)');
 				if (legend && legend.classList) legend.classList.add('is-hidden');
 			});
-			map.on('moveend', function () { map.__inmovFtthMapPointerActive = false; setMapMotionState(map, false); scheduleFullMarkerVisibility(map); });
-			map.on('zoomend', function () { map.__inmovFtthMapPointerActive = false; setMapMotionState(map, false); scheduleFullMarkerVisibility(map); });
+			map.on('moveend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
+			map.on('zoomend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
 			map.on('resize', function () { scheduleFullMarkerVisibility(map); });
 			if (typeof map.loaded === 'function' && map.loaded()) applyInitialNetworkOverview(map);
 			else if (typeof map.once === 'function') map.once('load', function () { applyInitialNetworkOverview(map); });

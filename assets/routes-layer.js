@@ -72,6 +72,32 @@
 		return { key: key, data: pointVisuals[key] || pointVisuals.outro };
 	}
 
+	/* JetEngine stores markers in a nested object. Walking that object and
+	 * repeatedly resolving every marker during a wheel/drag frame is expensive
+	 * on desktop, so keep a flat per-map snapshot and invalidate it only when
+	 * the provider scans for newly-created markers. */
+	function markerEntriesForMap(map) {
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups || !map) return [];
+		if (map.__inmovFtthMarkerEntriesSource === groups && Array.isArray(map.__inmovFtthMarkerEntries)) return map.__inmovFtthMarkerEntries;
+		var entries = [];
+		Object.keys(groups).forEach(function (id) {
+			(groups[id] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (marker) entries.push({ id: id, entry: entry, marker: marker });
+			});
+		});
+		map.__inmovFtthMarkerEntriesSource = groups;
+		map.__inmovFtthMarkerEntries = entries;
+		return entries;
+	}
+
+	function invalidateMarkerEntries(map) {
+		if (!map) return;
+		map.__inmovFtthMarkerEntriesSource = null;
+		map.__inmovFtthMarkerEntries = null;
+	}
+
 	function clearPointSelection() {
 		if (selectedPointElement) {
 			if (selectedPointElement.classList) selectedPointElement.classList.remove('inmov-ftth-point-marker--selected');
@@ -133,40 +159,36 @@
 	}
 
 	function decorateAllPointMarkers(map) {
-		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
-		if (!groups) return;
-		Object.keys(groups).forEach(function (id) {
-			(groups[id] || []).forEach(function (entry) {
-				var marker = entry && entry.marker;
-				if (marker && marker._map === map) decoratePointMarker(marker, pointRecords[id] || {});
-			});
+		markerEntriesForMap(map).forEach(function (item) {
+			if (item.marker && item.marker._map === map) decoratePointMarker(item.marker, pointRecords[item.id] || {});
 		});
 		updateMarkerVisibility(map);
 	}
 
 	function updateMarkerVisibility(map, options) {
-		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
-		if (!groups || !map || typeof map.getBounds !== 'function') return;
+		var entries = markerEntriesForMap(map);
+		if (!entries.length || !map || typeof map.getBounds !== 'function') return;
 		var bounds;
 		try { bounds = map.getBounds(); } catch (error) { return; }
 		var southWest = bounds.getSouthWest ? bounds.getSouthWest() : null;
 		var northEast = bounds.getNorthEast ? bounds.getNorthEast() : null;
 		var latMargin = southWest && northEast ? Math.max(0.002, (northEast.lat - southWest.lat) * 1.5) : 0.01;
 		var lngMargin = southWest && northEast ? Math.max(0.002, (northEast.lng - southWest.lng) * 1.5) : 0.01;
-		Object.keys(groups).forEach(function (id) {
-			(groups[id] || []).forEach(function (entry) {
-				var marker = entry && entry.marker;
-				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
-				var element = marker.getElement();
-				var visible = false;
-				try {
-					var position = marker.getLngLat();
-					visible = southWest && northEast
-						? position.lat >= southWest.lat - latMargin && position.lat <= northEast.lat + latMargin && position.lng >= southWest.lng - lngMargin && position.lng <= northEast.lng + lngMargin
-						: bounds.contains(position);
-				} catch (error) {}
-				if (element && element.classList) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
-			});
+		entries.forEach(function (item) {
+			var marker = item.marker;
+			if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+			var element = marker.getElement();
+			var visible = false;
+			try {
+				var position = marker.getLngLat();
+				visible = southWest && northEast
+					? position.lat >= southWest.lat - latMargin && position.lat <= northEast.lat + latMargin && position.lng >= southWest.lng - lngMargin && position.lng <= northEast.lng + lngMargin
+					: bounds.contains(position);
+			} catch (error) {}
+			if (element && element.classList) {
+				var hidden = element.classList.contains('inmov-ftth-point-marker--offscreen');
+				if (hidden === visible) element.classList.toggle('inmov-ftth-point-marker--offscreen', !visible);
+			}
 		});
 		if (!options || !options.lightweight) applyOverlapOffsets(map);
 		if (!options || !options.lightweight || options.refreshClusters) updatePointClusters(map);
@@ -176,15 +198,16 @@
 		if (!map || map.__inmovMarkerVisibilityPending) return;
 		map.__inmovMarkerVisibilityPending = true;
 		var isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-		var interval = isMobile ? 110 : 55;
-		var clusterInterval = isMobile ? 300 : 140;
+		var interval = isMobile ? 110 : 120;
+		var clusterInterval = isMobile ? 300 : 320;
 		var now = Date.now();
 		var elapsed = now - (map.__inmovMarkerVisibilityLast || 0);
 		var wait = Math.max(0, interval - elapsed);
 		var refresh = function () {
 			map.__inmovMarkerVisibilityPending = false;
 			var timestamp = Date.now();
-			var refreshClusters = timestamp - (map.__inmovMarkerClusterLast || 0) >= clusterInterval;
+			var mapMoving = !!map.__inmovFtthMapPointerActive || (typeof map.isMoving === 'function' && map.isMoving());
+			var refreshClusters = !mapMoving && timestamp - (map.__inmovMarkerClusterLast || 0) >= clusterInterval;
 			map.__inmovMarkerVisibilityLast = timestamp;
 			if (refreshClusters) map.__inmovMarkerClusterLast = timestamp;
 			updateMarkerVisibility(map, { lightweight: true, refreshClusters: refreshClusters });
@@ -194,28 +217,38 @@
 		else window.setTimeout(refresh, 60);
 	}
 
+	function scheduleFullMarkerVisibility(map) {
+		if (!map || map.__inmovMarkerFullRefreshPending) return;
+		map.__inmovMarkerFullRefreshPending = true;
+		var refresh = function () {
+			map.__inmovMarkerFullRefreshPending = false;
+			updateMarkerVisibility(map);
+		};
+		if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(refresh);
+		else if (typeof window.setTimeout === 'function') window.setTimeout(refresh, 0);
+		else refresh();
+	}
+
 	function updatePointClusters(map) {
-		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
-		if (!groups || !map || typeof map.getZoom !== 'function' || typeof map.project !== 'function') return;
+		var entries = markerEntriesForMap(map);
+		if (!entries.length || !map || typeof map.getZoom !== 'function' || typeof map.project !== 'function') return;
 		var container = typeof map.getContainer === 'function' ? map.getContainer() : null;
 		if (!container) return;
 		var overlay = container.querySelector('.inmov-ftth-point-clusters');
 		var zoom = map.getZoom();
 		var clusteredMode = zoom < 13;
 		var markerItems = [];
-		Object.keys(groups).forEach(function (id) {
-			(groups[id] || []).forEach(function (entry) {
-				var marker = entry && entry.marker;
-				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
-				var element = marker.getElement();
-				if (!element) return;
-				if (!clusteredMode) {
-					element.classList.remove('inmov-ftth-point-marker--clustered');
-					return;
-				}
-				if (element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
-				try { markerItems.push({ id: id, marker: marker, element: element, point: map.project(marker.getLngLat()) }); } catch (error) {}
-			});
+		entries.forEach(function (item) {
+			var marker = item.marker;
+			if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+			var element = marker.getElement();
+			if (!element) return;
+			if (!clusteredMode) {
+				element.classList.remove('inmov-ftth-point-marker--clustered');
+				return;
+			}
+			if (element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
+			try { markerItems.push({ id: item.id, marker: marker, element: element, point: map.project(marker.getLngLat()) }); } catch (error) {}
 		});
 		if (!clusteredMode) {
 			if (overlay) overlay.innerHTML = '';
@@ -230,6 +263,7 @@
 		var globalClusterMode = zoom < 4.5;
 		var bucketSize = zoom < 11 ? Infinity : 100;
 		var clusters = [];
+		var clusterByKey = Object.create(null);
 		markerItems.forEach(function (item) {
 			var cluster;
 			if (bucketSize === Infinity) {
@@ -238,16 +272,19 @@
 				} else {
 					var point = pointRecords[item.id] || {};
 					var localityInfo = localityClusterInfo(point.locality || point.cidade || point.city || point.municipio);
-					cluster = clusters.find(function (candidate) { return candidate.key === 'city:' + localityInfo.key; });
+					var cityKey = 'city:' + localityInfo.key;
+					cluster = clusterByKey[cityKey];
 					if (!cluster) {
-						cluster = { key: 'city:' + localityInfo.key, label: localityInfo.label, items: [] };
+						cluster = { key: cityKey, label: localityInfo.label, items: [] };
 						clusters.push(cluster);
+						clusterByKey[cityKey] = cluster;
 					}
 				}
 			} else {
 				var key = Math.floor(item.point.x / bucketSize) + ':' + Math.floor(item.point.y / bucketSize);
-				cluster = clusters.find(function (candidate) { return candidate.key === key; });
+				cluster = clusterByKey[key];
 				if (!cluster) { cluster = { key: key, items: [] }; clusters.push(cluster); }
+				clusterByKey[key] = cluster;
 			}
 			if (!cluster) { cluster = { key: 'all', items: [] }; clusters.push(cluster); }
 			cluster.items.push(item);
@@ -273,21 +310,19 @@
 	}
 
 	function applyOverlapOffsets(map) {
-		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
-		if (!groups || !map || typeof map.project !== 'function') return;
+		var entries = markerEntriesForMap(map);
+		if (!entries.length || !map || typeof map.project !== 'function') return;
 		if (typeof map.getZoom === 'function' && map.getZoom() < 13) {
-			Object.keys(groups).forEach(function (id) { (groups[id] || []).forEach(function (entry) { var marker = entry && entry.marker; if (marker && marker.getElement) { marker.getElement().style.setProperty('--inmov-overlap-x', '0px'); marker.getElement().style.setProperty('--inmov-overlap-y', '0px'); } }); });
+			entries.forEach(function (item) { var marker = item.marker; if (marker && marker.getElement) { marker.getElement().style.setProperty('--inmov-overlap-x', '0px'); marker.getElement().style.setProperty('--inmov-overlap-y', '0px'); } });
 			return;
 		}
 		var visible = [];
-		Object.keys(groups).forEach(function (id) {
-			(groups[id] || []).forEach(function (entry) {
-				var marker = entry && entry.marker;
-				if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
-				var element = marker.getElement();
-				if (!element || element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
-				try { var point = map.project(marker.getLngLat()); visible.push({ element: element, point: point }); } catch (error) {}
-			});
+		entries.forEach(function (item) {
+			var marker = item.marker;
+			if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+			var element = marker.getElement();
+			if (!element || element.classList.contains('inmov-ftth-point-marker--offscreen')) return;
+			try { var point = map.project(marker.getLngLat()); visible.push({ element: element, point: point }); } catch (error) {}
 		});
 		var buckets = {};
 		visible.forEach(function (item) {
@@ -924,6 +959,7 @@
 	function bindPointClickHandlers(map) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		if (!groups) return;
+		invalidateMarkerEntries(map);
 		Object.keys(groups).forEach(function (id) {
 			(groups[id] || []).forEach(function (entry) {
 				var marker = entry && entry.marker;
@@ -1496,6 +1532,8 @@
 				map.__inmovFtthOrientationEnabled = false;
 				map.__inmovFtthMapMoved = true;
 			});
+			map.on('dragend', function () { map.__inmovFtthMapPointerActive = false; });
+			map.on('zoomstart', function () { map.__inmovFtthMapPointerActive = true; });
 			map.on('click', function (event) {
 				var moved = !!map.__inmovFtthMapMoved;
 				map.__inmovFtthMapPointerActive = false;
@@ -1514,10 +1552,10 @@
 				var legend = document.querySelector('.inmov-ftth-map-legend:not(.is-hidden)');
 				if (legend && legend.classList) legend.classList.add('is-hidden');
 			});
-			map.on('moveend', function () { updateMarkerVisibility(map); });
+			map.on('moveend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
 			map.on('move', function () { scheduleMarkerVisibility(map); });
-			map.on('zoomend', function () { updateMarkerVisibility(map); });
-			map.on('resize', function () { updateMarkerVisibility(map); });
+			map.on('zoomend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
+			map.on('resize', function () { scheduleFullMarkerVisibility(map); });
 			if (typeof map.loaded === 'function' && map.loaded()) applyInitialNetworkOverview(map);
 			else if (typeof map.once === 'function') map.once('load', function () { applyInitialNetworkOverview(map); });
 			if (nativeLocationControl && map.__inmovFtthGeolocateControl) startNativeGeolocation(map, map.__inmovFtthGeolocateControl);

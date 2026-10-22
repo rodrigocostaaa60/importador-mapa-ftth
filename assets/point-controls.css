@@ -602,6 +602,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   gap:3px;
   min-height:0;
   height:48px;
+   padding:4px 12px;
   border:0;
   border-radius:12px;
   background:transparent;
@@ -615,9 +616,13 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   color:#0057b8;
  }
  .inmov-ftth-map-shell .inmov-ftth-map-bottom-bar svg{
-   width:26px;
-   height:26px;
-  display:block;
+   flex:0 0 26px!important;
+   width:26px!important;
+   min-width:26px!important;
+   height:26px!important;
+   min-height:26px!important;
+   display:block!important;
+   overflow:visible;
  }
  .inmov-ftth-map-shell .inmov-ftth-map-style-panel,
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel{
@@ -681,12 +686,15 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   font-size:15px;
  }
   .inmov-ftth-map-shell .inmov-ftth-point-search:before{
+   content:"";
    top:25px;
    left:19px;
    width:24px;
    height:24px;
    display:grid;
    place-items:center;
+   box-sizing:border-box;
+   background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364778b' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.8' cy='10.8' r='6.5'/%3E%3Cpath d='m16 16 5 5'/%3E%3C/svg%3E") center/21px 21px no-repeat;
    line-height:1;
    transform:translateY(-50%);
   }
@@ -705,7 +713,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
  .inmov-ftth-map-shell .inmov-ftth-map-legend{
    top:20px;
    left:calc(24px + min(470px,calc(100% - 48px)) + 12px);
-   width:min(470px,calc(100% - 48px - min(470px,calc(100% - 48px)) - 12px));
+   width:min(560px,calc(100% - 24px - min(470px,calc(100% - 48px)) - 36px));
    max-width:none;
    height:66px;
    box-sizing:border-box;
@@ -751,7 +759,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   position:absolute;
   top:auto;
   right:24px;
-   bottom:170px;
+   bottom:calc(92px + 110px + 12px);
   left:auto;
   z-index:2001;
   border:0!important;
@@ -762,6 +770,16 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   width:34px;
   height:34px;
   border-radius:10px;
+   display:grid;
+   place-items:center;
+   box-sizing:border-box;
+   border:1px solid #dbe4ef!important;
+   background:#fff!important;
+   box-shadow:0 4px 14px rgba(15,23,42,.16);
+  }
+  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.mapboxgl-ctrl-group:not(.inmov-ftth-geolocate-control) button:hover{
+   background:#eff6ff!important;
+   border-color:#bfdbfe!important;
  }
  .inmov-ftth-map-shell .mapboxgl-ctrl-top-right>.inmov-ftth-geolocate-control .mapboxgl-ctrl-geolocate{
   display:grid;

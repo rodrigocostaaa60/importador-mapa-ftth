@@ -29,6 +29,7 @@
 	var pendingEditItem = null;
 	var editPrefillTimer = null;
 	var editPopupBindTimer = null;
+	var nativeEditPanel = null;
 	var defaultMapStyle = 'mapbox://styles/mapbox/outdoors-v12';
 	// streets-v12 is a standard street style; satellite-streets-v12 is the
 	// Mapbox style that actually provides satellite imagery.
@@ -496,7 +497,7 @@
 	 * order when two panels intentionally share the same layer. */
 	function getActiveMapPanel() {
 		if (!document || !document.querySelectorAll) return null;
-		var panels = document.querySelectorAll('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open');
+		var panels = document.querySelectorAll('.inmov-ftth-map-sheet.is-open, .inmov-ftth-map-style-panel.is-open, .inmov-ftth-map-inventory-panel.is-open, .inmov-ftth-map-edit-panel.is-open');
 		var active = null;
 		var activeZ = -Infinity;
 		var activeIndex = -1;
@@ -1140,6 +1141,154 @@
 	}
 
 	bindEditPopupPrefillEvents();
+
+	/* The editor is intentionally rendered inside the same map shell as the
+	 * detail and inventory sheets. JetPopup is still available elsewhere in the
+	 * site, but it must not own this action: its document-level overlay can keep
+	 * an invisible layer above Mapbox and its form is not wired to the point CCT. */
+	function nativeEditValue(panel, name) {
+		return panel && panel.querySelector ? panel.querySelector('[name="' + name + '"]') : null;
+	}
+
+	function closeNativeEditPanel(map) {
+		var panel = nativeEditPanel;
+		if (!panel) return;
+		panel.classList.remove('is-open', 'is-expanded', 'is-saving');
+		panel.setAttribute('aria-hidden', 'true');
+		if (map) map.__inmovFtthEditSelecting = false;
+		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
+		if (host && host.classList) host.classList.remove('inmov-ftth-map-shell--edit-open');
+	}
+
+	function updateNativeEditLocationMode(panel, map) {
+		var mode = nativeEditValue(panel, 'inmov_location_mode');
+		var selected = mode ? mode.value : 'keep';
+		var coords = panel.querySelector('[data-edit-location="coordinates"]');
+		var hint = panel.querySelector('[data-edit-location="map"]');
+		if (coords) coords.hidden = selected !== 'coordinates' && selected !== 'map';
+		if (hint) hint.hidden = selected !== 'map';
+		if (map) map.__inmovFtthEditSelecting = selected === 'map';
+	}
+
+	function createNativeEditPanel(container, map) {
+		var host = mapShellFor(container);
+		if (!host || !host.appendChild || !document.createElement) return null;
+		var existing = host.querySelector && host.querySelector('.inmov-ftth-map-edit-panel');
+		if (existing) { nativeEditPanel = existing; return existing; }
+		var panel = document.createElement('section');
+		panel.className = 'inmov-ftth-map-edit-panel';
+		panel.setAttribute('aria-hidden', 'true');
+		panel.innerHTML =
+			'<div class="inmov-ftth-map-edit-panel__handle" role="button" tabindex="0" aria-label="Expandir editor"><span></span></div>' +
+			'<div class="inmov-ftth-map-edit-panel__head"><div><strong>Editar ponto da rede FTTH</strong><small>Revise os dados e salve diretamente no mapa.</small></div><button type="button" class="inmov-ftth-map-edit-panel__close" aria-label="Fechar">×</button></div>' +
+			'<form class="inmov-ftth-map-edit-panel__form" novalidate>' +
+			'<div class="inmov-ftth-map-edit-panel__notice" role="status" aria-live="polite"></div>' +
+			'<div class="inmov-ftth-map-edit-panel__grid">' +
+			'<label><span>Código *</span><input name="ponto_codigo" required autocomplete="off"></label>' +
+			'<label><span>Nome exibido *</span><input name="ponto_nome" required autocomplete="off"></label>' +
+			'<label><span>Tipo de ponto *</span><select name="ponto_tipo" required><option value="pop">POP</option><option value="olt">OLT</option><option value="cto">CTO</option><option value="poste">Poste</option><option value="caixa_emenda">Caixa de emenda</option><option value="splitter">Splitter</option><option value="loja">Loja / sede</option><option value="outro">Outro ponto</option></select></label>' +
+			'<label><span>Situação *</span><select name="ponto_status" required><option value="nativo">Nativo</option><option value="ativo">Ativo</option><option value="planejado">Planejado</option><option value="em_implantacao">Em implantação</option><option value="em_manutencao">Em manutenção</option><option value="manutencao">Manutenção</option><option value="inativo">Inativo</option></select></label>' +
+			'<label><span>Localidade *</span><input name="ponto_localidade" required autocomplete="address-level2"></label>' +
+			'<label><span>Endereço ou referência</span><input name="ponto_endereco" autocomplete="street-address"></label>' +
+			'<label><span>Capacidade / portas</span><input type="number" min="0" step="1" name="ponto_capacidade_portas" inputmode="numeric"></label>' +
+			'</div>' +
+			'<fieldset><legend>Localização *</legend><div class="inmov-ftth-map-edit-panel__location-options">' +
+			'<label><input type="radio" name="inmov_location_mode" value="keep" checked><span>Manter posição atual</span></label>' +
+			'<label><input type="radio" name="inmov_location_mode" value="coordinates"><span>Informar coordenadas</span></label>' +
+			'<label><input type="radio" name="inmov_location_mode" value="map"><span>Selecionar no mapa</span></label>' +
+			'</div><div class="inmov-ftth-map-edit-panel__coordinates" data-edit-location="coordinates" hidden>' +
+			'<label><span>Latitude</span><input type="number" name="ponto_latitude" step="0.000001" inputmode="decimal"></label>' +
+			'<label><span>Longitude</span><input type="number" name="ponto_longitude" step="0.000001" inputmode="decimal"></label>' +
+			'</div><p class="inmov-ftth-map-edit-panel__map-hint" data-edit-location="map" hidden>Clique no mapa para definir a nova posição do ponto.</p></fieldset>' +
+			'<label class="is-wide"><span>Observações técnicas</span><textarea name="ponto_observacao" rows="3"></textarea></label>' +
+			'<label class="is-wide"><span>Motivo da alteração *</span><textarea name="inmov_change_reason" rows="2" required placeholder="Explique brevemente o que foi alterado."></textarea></label>' +
+			'<label class="inmov-ftth-map-edit-panel__confirm is-wide"><input type="checkbox" name="inmov_reviewed" value="1" required><span>Confirme que revisou os dados antes de salvar.</span></label>' +
+			'<div class="inmov-ftth-map-edit-panel__footer"><button type="button" class="inmov-ftth-map-edit-panel__cancel">Cancelar</button><button type="submit" class="inmov-ftth-map-edit-panel__save">Salvar alterações</button></div>' +
+			'</form>';
+		host.appendChild(panel);
+		nativeEditPanel = panel;
+		var form = panel.querySelector('.inmov-ftth-map-edit-panel__form');
+		var close = panel.querySelector('.inmov-ftth-map-edit-panel__close');
+		var cancel = panel.querySelector('.inmov-ftth-map-edit-panel__cancel');
+		if (close) close.addEventListener('click', function () { closeNativeEditPanel(map); });
+		if (cancel) cancel.addEventListener('click', function () { closeNativeEditPanel(map); });
+		Array.prototype.forEach.call(panel.querySelectorAll('[name="inmov_location_mode"]'), function (radio) { radio.addEventListener('change', function () { updateNativeEditLocationMode(panel, map); }); });
+		var handle = panel.querySelector('.inmov-ftth-map-edit-panel__handle');
+		if (handle) { handle.addEventListener('click', function () { if (!panel.__inmovFtthSuppressHandleClick) panel.classList.toggle('is-expanded'); }); bindBottomSheetDrag(panel, handle); }
+		if (map && typeof map.on === 'function') {
+			map.on('click', function (event) {
+				if (!map.__inmovFtthEditSelecting || !panel.classList.contains('is-open') || !event || !event.lngLat) return;
+				var lat = nativeEditValue(panel, 'ponto_latitude');
+				var lng = nativeEditValue(panel, 'ponto_longitude');
+				if (lat) lat.value = Number(event.lngLat.lat).toFixed(6);
+				if (lng) lng.value = Number(event.lngLat.lng).toFixed(6);
+				var mode = nativeEditValue(panel, 'inmov_location_mode');
+				if (mode) mode.value = 'coordinates';
+				updateNativeEditLocationMode(panel, map);
+				var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice');
+				if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-info'; notice.textContent = 'Nova posição selecionada. Salve para confirmar.'; }
+			});
+		}
+		if (form) form.addEventListener('submit', function (event) {
+			event.preventDefault();
+			var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice');
+			var save = panel.querySelector('.inmov-ftth-map-edit-panel__save');
+			var currentId = panel.getAttribute('data-point-id');
+			if (!currentId || !config.pointUpdateEndpoint) return;
+			if (!form.checkValidity()) { form.reportValidity(); return; }
+			var values = {};
+			Array.prototype.forEach.call(form.querySelectorAll('input[name], select[name], textarea[name]'), function (field) {
+				if (field.type === 'radio' && !field.checked) return;
+				if (field.type === 'checkbox' && !field.checked) return;
+				values[field.name] = field.value;
+			});
+			panel.classList.add('is-saving');
+			if (save) save.disabled = true;
+			if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-info'; notice.textContent = 'Salvando alterações…'; }
+			window.fetch(config.pointUpdateEndpoint + encodeURIComponent(currentId), { method: 'POST', credentials: 'same-origin', headers: Object.assign({ 'Content-Type': 'application/json' }, config.nonce ? { 'X-WP-Nonce': config.nonce } : {}), body: JSON.stringify(values) })
+				.then(function (response) { return response.json().then(function (data) { if (!response.ok) throw new Error(data && data.message ? data.message : 'Não foi possível salvar o ponto.'); return data; }); })
+				.then(function () {
+					if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-success'; notice.textContent = 'Ponto atualizado com sucesso.'; }
+					map.__inmovFtthEditSelecting = false;
+					var refresh = map.__inmovFtthRefreshData;
+					if (typeof refresh === 'function') refresh();
+					window.setTimeout(function () { closeNativeEditPanel(map); }, 350);
+				})
+				.catch(function (error) { if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-error'; notice.textContent = error && error.message ? error.message : 'Não foi possível salvar o ponto.'; } })
+				.finally(function () { panel.classList.remove('is-saving'); if (save) save.disabled = false; });
+		});
+		return panel;
+	}
+
+	function openNativeEditPanel(container, map, point) {
+		var panel = createNativeEditPanel(container, map);
+		if (!panel || !point) return false;
+		var payload = editPointPayload(point);
+		panel.setAttribute('data-point-id', payload.id);
+		var initialValues = {
+			ponto_codigo: payload.code,
+			ponto_nome: payload.name,
+			ponto_localidade: payload.locality,
+			ponto_endereco: payload.address,
+			ponto_observacao: payload.observation
+		};
+		Object.keys(initialValues).forEach(function (name) { var field = nativeEditValue(panel, name); if (field) field.value = initialValues[name] === undefined ? '' : initialValues[name]; });
+		var capacity = nativeEditValue(panel, 'ponto_capacidade_portas'); if (capacity) capacity.value = payload.capacity || 0;
+		var type = nativeEditValue(panel, 'ponto_tipo'); if (type) type.value = payload.type || 'outro';
+		var status = nativeEditValue(panel, 'ponto_status'); if (status) status.value = payload.status || 'nativo';
+		var lat = nativeEditValue(panel, 'ponto_latitude'); if (lat) lat.value = payload.lat === undefined ? '' : payload.lat;
+		var lng = nativeEditValue(panel, 'ponto_longitude'); if (lng) lng.value = payload.lng === undefined ? '' : payload.lng;
+		var mode = nativeEditValue(panel, 'inmov_location_mode'); if (mode) mode.value = 'keep';
+		var reason = nativeEditValue(panel, 'inmov_change_reason'); if (reason) reason.value = '';
+		var reviewed = nativeEditValue(panel, 'inmov_reviewed'); if (reviewed) reviewed.checked = false;
+		var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice'); if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice'; notice.textContent = ''; }
+		updateNativeEditLocationMode(panel, map);
+		panel.classList.add('is-open');
+		panel.setAttribute('aria-hidden', 'false');
+		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
+		if (host && host.classList) host.classList.add('inmov-ftth-map-shell--edit-open');
+		return true;
+	}
 
 	function openSheet(map, title, rows, center, options) {
 		var sheet = document.querySelector('.inmov-ftth-map-sheet');
@@ -1855,9 +2004,12 @@
 				map.__inmovFtthMapMoved = false;
 				if (moved) return;
 				var originalTarget = event && event.originalEvent && event.originalEvent.target;
+				var editPanel = document.querySelector('.inmov-ftth-map-edit-panel.is-open');
+				if (editPanel && map.__inmovFtthEditSelecting) return;
 				hideMapSearch(map);
-				var isInteractive = originalTarget && originalTarget.closest && originalTarget.closest('.jet-map-marker, .mapboxgl-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-map-sheet');
+				var isInteractive = originalTarget && originalTarget.closest && originalTarget.closest('.jet-map-marker, .mapboxgl-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-map-sheet, .inmov-ftth-map-edit-panel');
 				if (isInteractive) return;
+				if (editPanel) { closeNativeEditPanel(map); return; }
 				var sheet = document.querySelector('.inmov-ftth-map-sheet.is-open');
 				if (sheet && sheet.classList) { sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); var shell = sheet.closest && sheet.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.remove('inmov-ftth-map-shell--sheet-open'); clearPointSelection(); clearRouteSelection(); return; }
 				var stylePanel = document.querySelector('.inmov-ftth-map-style-panel.is-open');
@@ -1908,10 +2060,11 @@
 				'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="center">⌾ <span>Centralizar</span></button>' +
 				'<button type="button" class="inmov-ftth-map-sheet__action is-hidden" data-sheet-action="copy-coordinates">▣ <span>Copiar coordenadas</span></button>' +
 			'<button type="button" class="inmov-ftth-map-sheet__action" data-sheet-action="route" aria-label="Abrir rota no Google Maps"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a3 3 0 1 1 0-6h7a3 3 0 1 0 0-6h-1m0 0 3-3m-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="16" r="1.35" fill="currentColor"/></svg><span>Rotas</span></button>' +
-				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit e_pdrf" data-popup="3701" data-sheet-action="edit">✎ <span>Editar</span></button>' +
+				'<button type="button" class="inmov-ftth-map-sheet__action inmov-ftth-map-sheet__edit" data-sheet-action="edit">✎ <span>Editar</span></button>' +
 			'</div>';
 		container.parentNode.appendChild(sheet);
 		if (!sheet.querySelector) return;
+			createNativeEditPanel(container, map);
 		var closeButton = sheet.querySelector && sheet.querySelector('.inmov-ftth-map-sheet__close');
 		var closeSheet = function () { if (sheet.classList) sheet.classList.remove('is-open', 'is-expanded'); sheet.setAttribute('aria-hidden', 'true'); var shell = sheet.closest && sheet.closest('.inmov-ftth-map-shell'); if (shell && shell.classList) shell.classList.remove('inmov-ftth-map-shell--sheet-open'); clearPointSelection(); clearRouteSelection(); };
 		if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', closeSheet);
@@ -1930,27 +2083,14 @@
 		if (copyButton && copyButton.addEventListener) copyButton.addEventListener('click', function () { copySheetValue(sheet.__inmovFtthCoordinates || ''); copyButton.classList.add('is-copied'); window.setTimeout(function () { copyButton.classList.remove('is-copied'); }, 1400); });
 		var routeButton = sheet.querySelector('[data-sheet-action="route"]');
 		if (routeButton && routeButton.addEventListener) routeButton.addEventListener('click', function () { openGoogleMapsRoute(sheet.__inmovFtthRouteCenter || []); });
-		var editButton = sheet.querySelector('[data-sheet-action="edit"]');
+			var editButton = sheet.querySelector('[data-sheet-action="edit"]');
 		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function (event) {
 			var point = sheet.dataset.itemKind === 'point' ? pointRecords[sheet.dataset.itemId] : null;
-			var detail = point ? editPointPayload(point) : { id: sheet.dataset.itemId || '', code: sheet.dataset.itemCode || '', kind: sheet.dataset.itemKind || '', type: sheet.dataset.itemType || '' };
-			pendingEditItem = detail;
-			window.InmovFtthEditItem = detail;
-			editButton.setAttribute('data-popup', String(config.editPopupId || '3701'));
-			editButton.classList.add('e_pdrf');
-			schedulePendingEditPrefill();
-			try { document.dispatchEvent(new CustomEvent('inmov-ftth:edit-item', { detail: detail })); } catch (error) {}
-			var selector = config.editPopupSelector || '';
-			if (selector) {
-				/* The map button is itself the custom-selector trigger. Stop the
-				 * delegated JetPopup handler from toggling it a second time, then
-				 * open the configured popup directly (with a DOM fallback). */
-				if (event && event.stopPropagation) event.stopPropagation();
-				openEditPopup(editButton);
-				bindEditPopupSelector();
-			}
+			if (!point) return;
+			if (event && event.preventDefault) event.preventDefault();
+			if (event && event.stopPropagation) event.stopPropagation();
+			openNativeEditPanel(container, map, point);
 		});
-		bindEditPopupSelector();
 		var records = markerRecords(container);
 		createMapInventoryPanel(container, map, function () { return records; });
 		refreshMapData = function (button) {

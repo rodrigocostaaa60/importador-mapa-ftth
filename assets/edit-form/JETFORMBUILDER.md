@@ -84,14 +84,23 @@ O JetFormBuilder continua sendo responsável pelos campos, validação e ação 
 
 Essa etapa ainda não foi conectada. O formulário não deve ser publicado para edição até que a autorização do usuário, o item ID e a validação de capacidade de edição estejam definidos.
 
-## Rascunhos criados diretamente via MCP
+## Formulário de ponto integrado
 
-Foram criados dois rascunhos no post type `jet-form-builder`, sem publicação e sem integração com o mapa:
+O formulário de ponto já existente no post type `jet-form-builder` (ID `3699`) é configurado automaticamente pelo plugin. Na primeira carga depois da atualização, o plugin grava no meta `_jf_actions` uma ação **Call Hook** com o nome `inmov_ftth_update_point` e o evento `DEFAULT.PROCESS`. Essa ação aparece no JetFormBuilder em **Post Submit Actions** com o nome “Atualizar item do CCT pontos_rede_ftth”.
 
-- **Editar Ponto da Rede FTTH — Rascunho MCP** — ID `3699`
+Quando o formulário é enviado, o callback do plugin:
+
+- lê o campo oculto `_inmov_item_id`;
+- valida a permissão `edit_posts` e os campos do ponto;
+- normaliza os aliases usados pela interface (`loja`/`outro`, `ativo`/`nativo`);
+- atualiza diretamente o item do CCT `pontos_rede_ftth` pelo handler do JetEngine;
+- relê a linha gravada e só confirma sucesso quando os valores persistiram.
+
+O formulário de rota (ID `3700`) continua sendo um rascunho separado para a próxima etapa:
+
 - **Editar Rota de Fibra — Rascunho MCP** — ID `3700`
 
-Os rascunhos já contêm blocos nativos do JetFormBuilder, incluindo selects, radios, condições, campos de coordenadas/geometria e submit. A ação `Insert/Update Custom Content Type Item`, o preset do item e as permissões continuam deliberadamente pendentes para configuração e teste no editor do JetFormBuilder.
+Os formulários contêm blocos nativos do JetFormBuilder, incluindo selects, radios, condições, campos de coordenadas/geometria e submit. A ação do ponto não depende mais de importação manual de JSON: ela é criada pelo plugin e executa a atualização do CCT no servidor.
 
 ## Validação e segurança antes de ativar o envio
 

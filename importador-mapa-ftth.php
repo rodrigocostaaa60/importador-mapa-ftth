@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.44
+ * Version: 0.10.45
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.44';
+	const VERSION               = '0.10.45';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -34,6 +34,12 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'admin_post_inmov_ftth_preview', array( $this, 'handle_preview' ) );
 		add_action( 'admin_post_inmov_ftth_import', array( $this, 'handle_import' ) );
 		add_action( 'rest_api_init', array( $this, 'register_routes_endpoint' ) );
+		/* Keep the front-end edit form wired to the same CCT update routine as
+		 * the native map editor. JetFormBuilder stores its post-submit actions in
+		 * the form's `_jf_actions` meta, so this is idempotent and only adds the
+		 * missing action for form 3699. */
+		add_action( 'init', array( $this, 'configure_jfb_point_form' ), 20 );
+		add_action( 'jet-form-builder/custom-action/inmov_ftth_update_point', array( $this, 'handle_jfb_point_update' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
 		add_action( 'wp_head', array( $this, 'print_map_loading_bootstrap' ), 1 );
 		add_action( 'wp_print_footer_scripts', array( $this, 'order_native_map_scripts' ), 1 );
@@ -179,6 +185,103 @@ final class Inmov_JetEngine_FTTH_Importer {
 			),
 			'callback' => array( $this, 'update_point' ),
 		) );
+	}
+
+	/**
+	 * Ensure JetFormBuilder form 3699 has a real post-submit update action.
+	 *
+	 * JetEngine's CCT action is not exposed by the installed JetFormBuilder
+	 * editor on some sites. The configured Call Hook is therefore the stable
+	 * JFB action boundary; the callback below performs the update through the
+	 * JetEngine CCT item handler and verifies persistence via the same path as
+	 * the native REST editor. The action is visible in the form's Post Submit
+	 * Actions list and is safe to run repeatedly without duplicating itself.
+	 */
+	public function configure_jfb_point_form() {
+		if ( ! function_exists( 'jet_form_builder' ) && ! class_exists( 'Jet_Form_Builder\\Plugin' ) ) {
+			return;
+		}
+
+		$form_id = 3699;
+		$form    = get_post( $form_id );
+		if ( ! $form ) {
+			return;
+		}
+
+		$raw_actions = get_post_meta( $form_id, '_jf_actions', true );
+		$actions     = array();
+		if ( is_array( $raw_actions ) ) {
+			$actions = $raw_actions;
+		} elseif ( is_string( $raw_actions ) && '' !== trim( $raw_actions ) ) {
+			$decoded = json_decode( $raw_actions, true );
+			if ( is_array( $decoded ) ) {
+				$actions = $decoded;
+			}
+		}
+
+		foreach ( $actions as $action ) {
+			if ( ! is_array( $action ) || 'call_hook' !== ( $action['type'] ?? '' ) ) {
+				continue;
+			}
+			$settings = $action['settings'] ?? array();
+			if ( isset( $settings['call_hook'] ) && is_array( $settings['call_hook'] ) ) {
+				$settings = $settings['call_hook'];
+			}
+			if ( 'inmov_ftth_update_point' === ( $settings['hook_name'] ?? '' ) ) {
+				return;
+			}
+		}
+
+		$actions[] = array(
+			'id'          => 0,
+			'type'        => 'call_hook',
+			'settings'    => array( 'hook_name' => 'inmov_ftth_update_point' ),
+			'events'      => array( 'DEFAULT.PROCESS' ),
+			'is_execute'  => true,
+			'editor_name' => 'Atualizar item do CCT pontos_rede_ftth',
+		);
+		update_post_meta( $form_id, '_jf_actions', wp_json_encode( $actions ) );
+	}
+
+	/**
+	 * Handle the JetFormBuilder post-submit action for the point editor.
+	 *
+	 * The hidden `_inmov_item_id` field identifies the existing CCT item. The
+	 * request is passed through the exact REST update implementation so both
+	 * editors have identical validation, aliases, coordinate handling, and
+	 * persistence verification.
+	 */
+	public function handle_jfb_point_update( $request, $action_handler = null ) {
+		if ( ! is_array( $request ) ) {
+			$request = array();
+		}
+		$item_id = absint( $request['_inmov_item_id'] ?? $request['inmov_item_id'] ?? $request['point_id'] ?? 0 );
+		if ( ! $item_id ) {
+			$this->throw_jfb_action_error( 'O formulário não informou qual ponto deve ser atualizado.' );
+			return;
+		}
+		if ( ! is_user_logged_in() || ! current_user_can( 'edit_posts' ) ) {
+			$this->throw_jfb_action_error( 'Você não tem permissão para editar pontos da rede.' );
+			return;
+		}
+
+		$payload = $request;
+		unset( $payload['_inmov_item_id'], $payload['inmov_item_id'], $payload['point_id'] );
+		$rest_request = new WP_REST_Request( 'POST', '/inmov-ftth/v1/points/' . $item_id );
+		$rest_request->set_url_params( array( 'id' => $item_id ) );
+		$rest_request->set_body_params( $payload );
+		$result = $this->update_point( $rest_request );
+		if ( is_wp_error( $result ) ) {
+			$this->throw_jfb_action_error( $result->get_error_message() );
+		}
+	}
+
+	/** Convert a CCT/REST error into a JetFormBuilder action failure. */
+	private function throw_jfb_action_error( $message ) {
+		if ( class_exists( 'Jet_Form_Builder\\Exceptions\\Action_Exception' ) ) {
+			throw new \Jet_Form_Builder\Exceptions\Action_Exception( 'failed', esc_html( (string) $message ) );
+		}
+		throw new RuntimeException( (string) $message );
 	}
 
 	/** Update a point CCT item from the native map editor. */

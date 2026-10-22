@@ -2,11 +2,11 @@
   "blueprintVersion": "1.0.0",
   "platform": "JetFormBuilder",
   "purpose": "frontend-edit-of-ftth-cct-items",
-  "status": "blueprint-only",
-  "notIntegrated": true,
+  "status": "point-form-integrated",
+  "notIntegrated": false,
   "notes": [
     "Este arquivo é uma especificação de montagem e revisão; não é um export nativo do JetFormBuilder.",
-    "A persistência somente deve ser ativada depois de validar o formulário no frontend e as permissões dos técnicos.",
+    "O formulário de ponto (3699) é configurado pelo plugin com uma ação JetFormBuilder Call Hook que atualiza diretamente o CCT pontos_rede_ftth e verifica a persistência.",
     "A seleção de coordenadas e a edição de geometria são ganchos para uma integração futura com o mapa."
   ],
   "frontendContext": {
@@ -192,7 +192,10 @@
         }
       ],
       "postSubmitAction": {
-        "type": "insert_update_custom_content_type_item",
+        "type": "call_hook",
+        "hookName": "inmov_ftth_update_point",
+        "event": "DEFAULT.PROCESS",
+        "editorName": "Atualizar item do CCT pontos_rede_ftth",
         "contentType": "pontos_rede_ftth",
         "itemIdField": "_inmov_item_id",
         "status": "publish",

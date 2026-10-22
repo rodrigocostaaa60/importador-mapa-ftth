@@ -328,20 +328,61 @@
 			if (!cluster.items.length) return;
 			var x = cluster.items.reduce(function (sum, item) { return sum + item.point.x; }, 0) / cluster.items.length;
 			var y = cluster.items.reduce(function (sum, item) { return sum + item.point.y; }, 0) / cluster.items.length;
+			var anchor = cluster.items.reduce(function (sum, item) {
+				try {
+					var position = item.marker.getLngLat();
+					if (position && Number.isFinite(Number(position.lng)) && Number.isFinite(Number(position.lat))) {
+						sum.lng += Number(position.lng);
+						sum.lat += Number(position.lat);
+						sum.count += 1;
+					}
+				} catch (error) {}
+				return sum;
+			}, { lng: 0, lat: 0, count: 0 });
+			var clusterAnchor = anchor.count ? { lng: anchor.lng / anchor.count, lat: anchor.lat / anchor.count } : null;
 			cluster.items.forEach(function (item) { item.element.classList.add('inmov-ftth-point-marker--clustered'); item.element.style.setProperty('--inmov-overlap-x', '0px'); item.element.style.setProperty('--inmov-overlap-y', '0px'); });
 			var bubble = document.createElement('button');
 			bubble.type = 'button'; bubble.className = 'inmov-ftth-point-cluster';
+			bubble.__inmovFtthClusterAnchor = clusterAnchor;
 			var clusterLabel = cluster.label ? cluster.label + ' · ' + cluster.items.length : String(cluster.items.length);
 			bubble.textContent = clusterLabel;
 			bubble.setAttribute('aria-label', clusterLabel + ' pontos');
 			bubble.style.left = Math.round(x) + 'px'; bubble.style.top = Math.round(y) + 'px';
 			bubble.addEventListener('click', function (event) {
 				if (event && event.stopPropagation) event.stopPropagation();
-				var center = map.unproject ? map.unproject([x, y]) : null;
-				if (center && typeof map.flyTo === 'function') map.flyTo({ center: [center.lng, center.lat], zoom: 13, essential: true });
+				var target = bubble.__inmovFtthClusterAnchor;
+				if (target && typeof map.flyTo === 'function') map.flyTo({ center: [target.lng, target.lat], zoom: 13, essential: true });
 			});
 			overlay.appendChild(bubble);
 		});
+	}
+
+	function updatePointClusterPositions(map) {
+		if (!map || typeof map.project !== 'function' || typeof map.getContainer !== 'function') return;
+		var container = map.getContainer();
+		var overlay = container && container.querySelector ? container.querySelector('.inmov-ftth-point-clusters') : null;
+		if (!overlay || !overlay.querySelectorAll) return;
+		Array.prototype.forEach.call(overlay.querySelectorAll('.inmov-ftth-point-cluster'), function (bubble) {
+			var anchor = bubble.__inmovFtthClusterAnchor;
+			if (!anchor) return;
+			try {
+				var point = map.project(anchor);
+				bubble.style.left = Math.round(point.x) + 'px';
+				bubble.style.top = Math.round(point.y) + 'px';
+			} catch (error) {}
+		});
+	}
+
+	function schedulePointClusterPositions(map) {
+		if (!map || map.__inmovFtthClusterPositionPending) return;
+		map.__inmovFtthClusterPositionPending = true;
+		var update = function () {
+			map.__inmovFtthClusterPositionPending = false;
+			updatePointClusterPositions(map);
+		};
+		if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(update);
+		else if (typeof window.setTimeout === 'function') window.setTimeout(update, 0);
+		else update();
 	}
 
 	function applyOverlapOffsets(map) {
@@ -1601,6 +1642,7 @@
 			map.on('moveend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
 			map.on('zoomend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
 			map.on('resize', function () { scheduleFullMarkerVisibility(map); });
+			map.on('move', function () { schedulePointClusterPositions(map); });
 			if (typeof map.loaded === 'function' && map.loaded()) applyInitialNetworkOverview(map);
 			else if (typeof map.once === 'function') map.once('load', function () { applyInitialNetworkOverview(map); });
 			if (nativeLocationControl && map.__inmovFtthGeolocateControl && shouldAutoLocateMap()) startNativeGeolocation(map, map.__inmovFtthGeolocateControl);

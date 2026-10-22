@@ -744,7 +744,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   position:absolute;
   top:auto;
    right:20px;
-    bottom:82px;
+    bottom:24px;
   left:auto;
   z-index:2001;
     gap:2px!important;
@@ -759,7 +759,7 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
   position:absolute;
   top:auto;
    right:20px;
-    bottom:calc(82px + 94px + 2px);
+     bottom:calc(24px + 94px + 2px);
   left:auto;
   z-index:2001;
    border:0!important;

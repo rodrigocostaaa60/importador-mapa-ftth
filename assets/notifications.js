@@ -78,7 +78,15 @@
 
 	function formatDate(value) {
 		if (!value) return '';
-		var date = new Date(String(value).replace(' ', 'T'));
+		var raw = String(value).trim();
+		var date;
+		if (/^\d{9,13}$/.test(raw)) {
+			var timestamp = Number(raw);
+			if (timestamp < 100000000000) timestamp *= 1000;
+			date = new Date(timestamp);
+		} else {
+			date = new Date(raw.replace(' ', 'T'));
+		}
 		if (isNaN(date.getTime())) return String(value).replace('T', ' ');
 		return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 	}
@@ -91,7 +99,13 @@
 			body: JSON.stringify({ notification_id: item.id })
 		}).then(function () {
 			item.read = true;
-			if (card) card.classList.remove('is-unread');
+			if (card) {
+				card.classList.remove('is-unread');
+				var marker = card.querySelector('.inmov-ftth-notification-marker');
+				var readButton = card.querySelector('.inmov-ftth-notification-actions button');
+				if (marker) marker.textContent = '✓';
+				if (readButton) readButton.remove();
+			}
 			updateBadge(items.filter(function (entry) { return !entry.read; }).length);
 		}).catch(function () {});
 	}

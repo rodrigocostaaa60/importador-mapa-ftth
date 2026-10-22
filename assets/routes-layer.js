@@ -242,7 +242,21 @@
 	 * later camera position needs them. */
 	function syncMountedMarkers(map) {
 		var entries = markerEntriesForMap(map);
-		if (!map || entries.length < 120 || typeof map.getBounds !== 'function') return;
+		if (!map || entries.length < 120) return;
+		var zoom = typeof map.getZoom === 'function' ? map.getZoom() : 14;
+		if (zoom < 13) {
+			entries.forEach(function (item) {
+				var marker = item && item.marker;
+				if (!marker || typeof marker.getElement !== 'function') return;
+				var element = marker.getElement();
+				if (element === selectedPointElement || element === selectedPointContainer) return;
+				if (marker._map === map && typeof marker.remove === 'function') {
+					try { marker.remove(); marker.__inmovFtthVirtualized = true; } catch (error) {}
+				}
+			});
+			return;
+		}
+		if (typeof map.getBounds !== 'function') return;
 		var bounds;
 		try { bounds = map.getBounds(); } catch (error) { return; }
 		var southWest = bounds && bounds.getSouthWest ? bounds.getSouthWest() : null;
@@ -258,7 +272,8 @@
 			if (inside && !mounted && marker.__inmovFtthVirtualized && typeof marker.addTo === 'function') {
 				try { marker.addTo(map); mounted = marker._map === map; } catch (error) {}
 			}
-			if (!inside && mounted && marker !== selectedPointElement && typeof marker.remove === 'function') {
+			var element = marker.getElement ? marker.getElement() : null;
+			if (!inside && mounted && element !== selectedPointElement && element !== selectedPointContainer && typeof marker.remove === 'function') {
 				try { marker.remove(); marker.__inmovFtthVirtualized = true; } catch (error) {}
 			}
 		});
@@ -275,7 +290,15 @@
 		var markerItems = [];
 		entries.forEach(function (item) {
 			var marker = item.marker;
-			if (!marker || marker._map !== map || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+			if (!marker || !marker.getElement || typeof marker.getLngLat !== 'function') return;
+			if (clusteredMode && marker._map !== map) {
+				try {
+					var detachedPoint = map.project(marker.getLngLat());
+					markerItems.push({ id: item.id, marker: marker, element: marker.getElement(), point: detachedPoint });
+				} catch (error) {}
+				return;
+			}
+			if (marker._map !== map) return;
 			var element = marker.getElement();
 			if (!element) return;
 			if (!clusteredMode) {
@@ -340,7 +363,12 @@
 				return sum;
 			}, { lng: 0, lat: 0, count: 0 });
 			var clusterAnchor = anchor.count ? { lng: anchor.lng / anchor.count, lat: anchor.lat / anchor.count } : null;
-			cluster.items.forEach(function (item) { item.element.classList.add('inmov-ftth-point-marker--clustered'); item.element.style.setProperty('--inmov-overlap-x', '0px'); item.element.style.setProperty('--inmov-overlap-y', '0px'); });
+			cluster.items.forEach(function (item) {
+				if (!item.element || !item.element.classList) return;
+				item.element.classList.add('inmov-ftth-point-marker--clustered');
+				item.element.style.setProperty('--inmov-overlap-x', '0px');
+				item.element.style.setProperty('--inmov-overlap-y', '0px');
+			});
 			var bubble = document.createElement('button');
 			bubble.type = 'button'; bubble.className = 'inmov-ftth-point-cluster';
 			bubble.__inmovFtthClusterAnchor = clusterAnchor;
@@ -388,10 +416,7 @@
 	function applyOverlapOffsets(map) {
 		var entries = markerEntriesForMap(map);
 		if (!entries.length || !map || typeof map.project !== 'function') return;
-		if (typeof map.getZoom === 'function' && map.getZoom() < 13) {
-			entries.forEach(function (item) { var marker = item.marker; if (marker && marker.getElement) { marker.getElement().style.setProperty('--inmov-overlap-x', '0px'); marker.getElement().style.setProperty('--inmov-overlap-y', '0px'); } });
-			return;
-		}
+		if (typeof map.getZoom === 'function' && map.getZoom() < 13) return;
 		var visible = [];
 		entries.forEach(function (item) {
 			var marker = item.marker;
@@ -1621,6 +1646,14 @@
 			});
 			map.on('dragend', function () { map.__inmovFtthMapPointerActive = false; });
 			map.on('zoomstart', function () { map.__inmovFtthMapPointerActive = true; syncMountedMarkers(map); });
+			map.on('zoom', function () {
+				var clustered = typeof map.getZoom === 'function' && map.getZoom() < 13;
+				if (clustered !== map.__inmovFtthClusteredMounts) {
+					map.__inmovFtthClusteredMounts = clustered;
+					syncMountedMarkers(map);
+				}
+				schedulePointClusterPositions(map);
+			});
 			map.on('click', function (event) {
 				var moved = !!map.__inmovFtthMapMoved;
 				map.__inmovFtthMapPointerActive = false;

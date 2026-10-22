@@ -229,6 +229,13 @@
 		else refresh();
 	}
 
+	function setMapMotionState(map, moving) {
+		if (!map || typeof map.getContainer !== 'function') return;
+		var container = map.getContainer();
+		var shell = container && container.parentNode;
+		if (shell && shell.classList) shell.classList.toggle('inmov-ftth-map-shell--map-moving', !!moving);
+	}
+
 	function updatePointClusters(map) {
 		var entries = markerEntriesForMap(map);
 		if (!entries.length || !map || typeof map.getZoom !== 'function' || typeof map.project !== 'function') return;
@@ -959,11 +966,12 @@
 	function bindPointClickHandlers(map) {
 		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
 		if (!groups) return;
-		invalidateMarkerEntries(map);
+		var markerCacheChanged = false;
 		Object.keys(groups).forEach(function (id) {
 			(groups[id] || []).forEach(function (entry) {
 				var marker = entry && entry.marker;
 				if (!marker || marker._map !== map || !marker.getElement || pointClickHandlers.has(marker)) return;
+				markerCacheChanged = true;
 				decoratePointMarker(marker, pointRecords[id] || {});
 				pointClickHandlers.add(marker);
 				marker.getElement().addEventListener('click', function (event) {
@@ -973,6 +981,7 @@
 				}, true);
 			});
 		});
+		if (markerCacheChanged) invalidateMarkerEntries(map);
 	}
 
 	function markerRecords(container) {
@@ -1526,18 +1535,20 @@
 			});
 			map.on('trackuserlocationstart', function () { enableDeviceOrientation(map); });
 			map.on('trackuserlocationend', function () { map.__inmovFtthOrientationEnabled = false; });
-			map.on('mousedown', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; });
-			map.on('touchstart', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; });
+			map.on('mousedown', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; setMapMotionState(map, true); });
+			map.on('touchstart', function () { map.__inmovFtthMapPointerActive = true; map.__inmovFtthMapMoved = false; setMapMotionState(map, true); });
 			map.on('dragstart', function () {
 				map.__inmovFtthOrientationEnabled = false;
 				map.__inmovFtthMapMoved = true;
+				setMapMotionState(map, true);
 			});
 			map.on('dragend', function () { map.__inmovFtthMapPointerActive = false; });
-			map.on('zoomstart', function () { map.__inmovFtthMapPointerActive = true; });
+			map.on('zoomstart', function () { map.__inmovFtthMapPointerActive = true; setMapMotionState(map, true); });
 			map.on('click', function (event) {
 				var moved = !!map.__inmovFtthMapMoved;
 				map.__inmovFtthMapPointerActive = false;
 				map.__inmovFtthMapMoved = false;
+				setMapMotionState(map, false);
 				if (moved) return;
 				var originalTarget = event && event.originalEvent && event.originalEvent.target;
 				hideMapSearch(map);
@@ -1552,9 +1563,8 @@
 				var legend = document.querySelector('.inmov-ftth-map-legend:not(.is-hidden)');
 				if (legend && legend.classList) legend.classList.add('is-hidden');
 			});
-			map.on('moveend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
-			map.on('move', function () { scheduleMarkerVisibility(map); });
-			map.on('zoomend', function () { map.__inmovFtthMapPointerActive = false; scheduleFullMarkerVisibility(map); });
+			map.on('moveend', function () { map.__inmovFtthMapPointerActive = false; setMapMotionState(map, false); scheduleFullMarkerVisibility(map); });
+			map.on('zoomend', function () { map.__inmovFtthMapPointerActive = false; setMapMotionState(map, false); scheduleFullMarkerVisibility(map); });
 			map.on('resize', function () { scheduleFullMarkerVisibility(map); });
 			if (typeof map.loaded === 'function' && map.loaded()) applyInitialNetworkOverview(map);
 			else if (typeof map.once === 'function') map.once('load', function () { applyInitialNetworkOverview(map); });

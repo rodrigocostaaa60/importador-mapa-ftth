@@ -82,6 +82,12 @@
  .inmov-ftth-map-sheet__action{flex:1;min-height:38px}
 }
 
+/* Keep the map lightweight while the user pans or zooms. Labels are restored
+ * on moveend, while the underlying markers remain interactive and visible. */
+.inmov-ftth-map-shell--map-moving .inmov-ftth-point-marker__label{
+ visibility:hidden!important;
+}
+
 /* O corpo do painel é flexível e cada cartão cresce com o conteúdo.
  * Isso evita que observações longas sejam cortadas pela altura mínima da
  * linha ou pelo cálculo de altura do grid em telas menores. */

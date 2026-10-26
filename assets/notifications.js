@@ -417,7 +417,7 @@
 		refresh();
 	});
 	document.addEventListener('click', function (event) {
-		if (!root.contains(event.target)) setOpen(false);
+		if (!root.contains(event.target) && !preview.contains(event.target)) setOpen(false);
 	});
 	refresh();
 	config.announce = function (item) {

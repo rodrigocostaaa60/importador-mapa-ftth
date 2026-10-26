@@ -292,7 +292,8 @@
 		}).then(function (result) {
 			link.removeAttribute('aria-busy');
 			if (looksLikeAccessDenied(result.response, result.html)) {
-				recordAccessDeniedNotice(url, (link.textContent || '').replace(/\s+/g, ' ').trim());
+				var linkLabel = (link.textContent || '').replace(/\s+/g, ' ').replace(/^\s*[•–—-]\s*/, '').trim();
+				recordAccessDeniedNotice(url, linkLabel);
 				return;
 			}
 			link.dataset.inmovAccessBypass = '1';

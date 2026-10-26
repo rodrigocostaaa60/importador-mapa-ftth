@@ -269,11 +269,13 @@
 		}).catch(function () { showAccessDeniedNotice(label); });
 	}
 
-	function preflightSidebarLink(link, event) {
-		if (!link || !link.href || !link.closest || !link.closest('.po-sidebar')) return;
+	function preflightInternalLink(link, event) {
+		if (!link || !link.href) return;
 		if (event.defaultPrevented || (event.button !== undefined && event.button !== 0) || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 		if (link.dataset.inmovAccessBypass === '1' || accessChecks.has(link)) return;
 		if (link.target && link.target !== '_self') return;
+		var rawHref = (link.getAttribute('href') || '').trim();
+		if (!rawHref || rawHref.charAt(0) === '#' || /^(?:mailto|tel|javascript):/i.test(rawHref) || link.hasAttribute('download')) return;
 		var url;
 		try { url = new URL(link.href, window.location.href); } catch (error) { return; }
 		if (url.origin !== window.location.origin || url.pathname === window.location.pathname && url.hash) return;
@@ -308,7 +310,7 @@
 	document.addEventListener('click', function (event) {
 		var target = event.target && event.target.closest ? event.target : (event.target && event.target.parentElement);
 		var link = target && target.closest ? target.closest('a') : null;
-		preflightSidebarLink(link, event);
+		preflightInternalLink(link, event);
 	}, true);
 
 	function markRead(item, card) {

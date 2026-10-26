@@ -1186,7 +1186,7 @@
 			})
 		}).then(function (response) {
 			if (!response || !response.ok) return false;
-			return response.json().then(function (data) { return !!(data && (data.created || data.deduplicated)); }, function () { return true; });
+			return response.json().then(function (data) { return data && (data.created || data.deduplicated) ? data : false; }, function () { return { created: true }; });
 		}).catch(function () { return false; });
 		permissionNotificationPromises[pointId] = request;
 		request.then(function () { delete permissionNotificationPromises[pointId]; }, function () { delete permissionNotificationPromises[pointId]; });
@@ -2167,7 +2167,25 @@
 			if (!canEditPoints()) {
 				var permissionNotice = showEditPermissionNotice(sheet);
 				recordEditPermissionNotification(point).then(function (recorded) {
-					if (recorded) markPermissionNotificationRecorded(permissionNotice);
+					if (recorded) {
+						markPermissionNotificationRecorded(permissionNotice);
+						if (recorded.created) {
+							var notification = {
+								id: recorded.notification_id,
+								title: recorded.title,
+								message: recorded.message,
+								type: recorded.type || 'alerta',
+								url: recorded.url || '',
+								created_at: recorded.created_at || '',
+								created_at_display: recorded.created_at_display || ''
+							};
+							if (window.InmovFtthNotifications && typeof window.InmovFtthNotifications.announce === 'function') {
+								window.InmovFtthNotifications.announce(notification);
+							} else if (window.dispatchEvent && typeof window.CustomEvent === 'function') {
+								window.dispatchEvent(new CustomEvent('inmov-ftth-notification-created', { detail: notification }));
+							}
+						}
+					}
 				});
 				return;
 			}

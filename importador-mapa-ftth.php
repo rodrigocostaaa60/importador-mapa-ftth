@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.52
+ * Version: 0.10.53
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.52';
+	const VERSION               = '0.10.53';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -284,6 +284,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'priority'     => sanitize_key( $row['notificacao_prioridade'] ?? 'normal' ),
 				'url'          => esc_url_raw( $row['notificacao_url'] ?? '' ),
 				'created_at'   => sanitize_text_field( $row['notificacao_criada_em'] ?? '' ),
+				'created_at_display' => $this->notification_date_label( $row['notificacao_criada_em'] ?? '' ),
 				'read'         => in_array( $id, $read_ids, true ),
 				'dismissible'  => ! empty( $row['notificacao_dispensavel'] ),
 				'requires_ack' => ! empty( $row['notificacao_exige_ciencia'] ),
@@ -292,6 +293,28 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 		$unread = count( array_filter( $output, function( $item ) { return empty( $item['read'] ); } ) );
 		return rest_ensure_response( array( 'items' => $output, 'unread' => $unread ) );
+	}
+
+	/** Convert JetEngine date/timestamp values using the site's configured timezone. */
+	private function notification_date_label( $value ) {
+		$raw = trim( (string) $value );
+		if ( '' === $raw ) {
+			return '';
+		}
+		$timezone = wp_timezone();
+		if ( preg_match( '/^\d{9,13}$/', $raw ) ) {
+			$timestamp = (int) $raw;
+			if ( $timestamp > 100000000000 ) {
+				$timestamp = (int) floor( $timestamp / 1000 );
+			}
+			return wp_date( 'd/m H:i', $timestamp, $timezone );
+		}
+		try {
+			$date = new DateTimeImmutable( str_replace( 'T', ' ', $raw ), $timezone );
+			return wp_date( 'd/m H:i', $date->getTimestamp(), $timezone );
+		} catch ( Throwable $error ) {
+			return str_replace( 'T', ' ', $raw );
+		}
 	}
 
 	/** Mark one notification as read in the JetEngine readings CCT. */
@@ -431,7 +454,16 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 
 		set_transient( $dedupe_key, 1, 5 * MINUTE_IN_SECONDS );
-		return rest_ensure_response( array( 'created' => true, 'notification_id' => (int) $notification_id ) );
+		return rest_ensure_response( array(
+			'created'            => true,
+			'notification_id'   => (int) $notification_id,
+			'title'             => $data['notificacao_titulo'],
+			'message'           => $data['notificacao_mensagem'],
+			'type'              => $data['notificacao_tipo'],
+			'url'               => $data['notificacao_url'],
+			'created_at'        => $data['notificacao_criada_em'],
+			'created_at_display'=> $this->notification_date_label( $data['notificacao_criada_em'] ),
+		) );
 	}
 
 	/**
@@ -830,7 +862,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'readEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/read' ) ),
 				'readAllEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/read-all' ) ),
 				'nonce'      => wp_create_nonce( 'wp_rest' ),
-				'pollMs'     => 60000,
+			'pollMs'     => 10000,
 			)
 		);
 	}

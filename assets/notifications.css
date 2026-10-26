@@ -170,6 +170,7 @@
 }
 
 .inmov-ftth-notification-root.is-sidebar .inmov-ftth-notification-panel {
+	position: fixed;
 	top: auto;
 	right: auto;
 	left: calc(var(--inmov-ftth-sidebar-width, 268px) + 12px);

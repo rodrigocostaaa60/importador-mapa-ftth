@@ -66,6 +66,7 @@
 	var announcedIds = {};
 	var audioContext = null;
 	var pendingAnnouncements = [];
+	var accessChecks = new WeakSet();
 
 	window.addEventListener('inmov-ftth-notification-created', function (event) {
 		var item = event && event.detail;
@@ -207,6 +208,107 @@
 		if (key) announcedIds[key] = true;
 		showPreview(item);
 	}
+
+	function accessDeniedText(html) {
+		if (!html) return '';
+		try {
+			var parsed = new DOMParser().parseFromString(String(html), 'text/html');
+			return ((parsed.title || '') + ' ' + (parsed.body ? parsed.body.textContent : '')).replace(/\s+/g, ' ').trim().slice(0, 16000);
+		} catch (error) {
+			return String(html).replace(/\s+/g, ' ').slice(0, 16000);
+		}
+	}
+
+	function looksLikeAccessDenied(response, html) {
+		var responseUrl = '';
+		try { responseUrl = new URL(response.url || '', window.location.href).pathname; } catch (error) {}
+		if (!response || response.status === 401 || response.status === 403 || response.status >= 500) return true;
+		if (/wp-login\.php|acesso-negado|access-denied/i.test(responseUrl)) return true;
+		return /(você\s+não\s+tem\s+permissão|nao\s+tem\s+permiss[aã]o|não\s+possui\s+permissão|nao\s+possui\s+permiss[aã]o|acesso\s+negado|permiss[aã]o\s+necess[aá]ria|you\s+are\s+not\s+allowed|permission\s+denied|access\s+denied|forbidden)/i.test(accessDeniedText(html));
+	}
+
+	function showAccessDeniedNotice(label) {
+		var item = {
+			id: 'access-denied-local-' + Date.now(),
+			title: 'Acesso não permitido',
+			message: 'Você não possui a permissão necessária para abrir “' + (label || 'esta página') + '”. Contate a gerência para solicitar acesso.',
+			type: 'alerta',
+			created_at_display: 'agora',
+			read: false
+		};
+		if (typeof config.announce === 'function') config.announce(item);
+		else announce(item);
+	}
+
+	function recordAccessDeniedNotice(url, label) {
+		if (!config.accessDeniedEndpoint) {
+			showAccessDeniedNotice(label);
+			return;
+		}
+		request(config.accessDeniedEndpoint, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ url: url.href, label: label || '' })
+		}).then(function (data) {
+			if (data && data.created) {
+				var item = {
+					id: data.notification_id,
+					title: data.title,
+					message: data.message,
+					type: data.type || 'alerta',
+					url: data.url || '',
+					created_at: data.created_at || '',
+					created_at_display: data.created_at_display || '',
+					read: false
+				};
+				if (typeof config.announce === 'function') config.announce(item);
+				else announce(item);
+			} else if (!data || !data.deduplicated) {
+				showAccessDeniedNotice(label);
+			}
+		}).catch(function () { showAccessDeniedNotice(label); });
+	}
+
+	function preflightSidebarLink(link, event) {
+		if (!link || !link.href || !link.closest || !link.closest('.po-sidebar')) return;
+		if (event.defaultPrevented || (event.button !== undefined && event.button !== 0) || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		if (link.dataset.inmovAccessBypass === '1' || accessChecks.has(link)) return;
+		if (link.target && link.target !== '_self') return;
+		var url;
+		try { url = new URL(link.href, window.location.href); } catch (error) { return; }
+		if (url.origin !== window.location.origin || url.pathname === window.location.pathname && url.hash) return;
+		if (!url.pathname || url.pathname === '/') return;
+
+		event.preventDefault();
+		event.stopPropagation();
+		accessChecks.add(link);
+		link.setAttribute('aria-busy', 'true');
+		window.fetch(url.href, {
+			credentials: 'same-origin',
+			cache: 'no-store',
+			headers: { 'Accept': 'text/html', 'X-Inmov-Access-Check': '1' }
+		}).then(function (response) {
+			return response.text().then(function (html) { return { response: response, html: html }; });
+		}).then(function (result) {
+			link.removeAttribute('aria-busy');
+			if (looksLikeAccessDenied(result.response, result.html)) {
+				recordAccessDeniedNotice(url, (link.textContent || '').replace(/\s+/g, ' ').trim());
+				return;
+			}
+			link.dataset.inmovAccessBypass = '1';
+			window.location.assign(url.href);
+		}).catch(function () {
+			link.removeAttribute('aria-busy');
+			link.dataset.inmovAccessBypass = '1';
+			window.location.assign(url.href);
+		}).finally(function () { accessChecks.delete(link); });
+	}
+
+	document.addEventListener('click', function (event) {
+		var target = event.target && event.target.closest ? event.target : (event.target && event.target.parentElement);
+		var link = target && target.closest ? target.closest('a') : null;
+		preflightSidebarLink(link, event);
+	}, true);
 
 	function markRead(item, card) {
 		if (!item || item.read) return Promise.resolve();

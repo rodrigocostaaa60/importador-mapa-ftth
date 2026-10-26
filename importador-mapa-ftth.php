@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.53
+ * Version: 0.10.54
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.53';
+	const VERSION               = '0.10.54';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -196,6 +196,22 @@ final class Inmov_JetEngine_FTTH_Importer {
 				),
 			),
 			'callback'            => array( $this, 'create_permission_notification' ),
+		) );
+		register_rest_route( 'inmov-ftth/v1', '/notifications/access-denied', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'args'                => array(
+				'url' => array(
+					'required'          => true,
+					'sanitize_callback' => 'esc_url_raw',
+					'validate_callback' => function( $value ) { return (bool) wp_http_validate_url( $value ); },
+				),
+				'label' => array(
+					'required'          => false,
+					'sanitize_callback' => 'sanitize_text_field',
+				),
+			),
+			'callback'            => array( $this, 'create_access_denied_notification' ),
 		) );
 		register_rest_route( 'inmov-ftth/v1', '/notifications', array(
 			'methods'             => WP_REST_Server::READABLE,
@@ -463,6 +479,73 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'url'               => $data['notificacao_url'],
 			'created_at'        => $data['notificacao_criada_em'],
 			'created_at_display'=> $this->notification_date_label( $data['notificacao_criada_em'] ),
+		) );
+	}
+
+	/** Record a blocked frontend page attempt without navigating away from the current screen. */
+	public function create_access_denied_notification( WP_REST_Request $request ) {
+		$user_id = get_current_user_id();
+		$url     = esc_url_raw( $request->get_param( 'url' ) );
+		$label   = sanitize_text_field( $request->get_param( 'label' ) );
+		$parts   = wp_parse_url( $url );
+		$home    = wp_parse_url( home_url( '/' ) );
+		if ( ! $user_id || ! $url || ! is_array( $parts ) || ! is_array( $home ) || ( $parts['host'] ?? '' ) !== ( $home['host'] ?? '' ) ) {
+			return new WP_Error( 'inmov_ftth_access_notification_invalid_request', 'Não foi possível identificar a página solicitada.', array( 'status' => 400 ) );
+		}
+
+		$path       = trim( (string) ( $parts['path'] ?? '' ), '/' );
+		$dedupe_key = 'inmov_ftth_access_notice_' . $user_id . '_' . md5( $path ?: $url );
+		if ( get_transient( $dedupe_key ) ) {
+			return rest_ensure_response( array( 'created' => false, 'deduplicated' => true ) );
+		}
+
+		$user        = wp_get_current_user();
+		$display     = $user->display_name ?: $user->user_login;
+		$page_label  = $label ?: ( $path ? ucwords( str_replace( array( '-', '_' ), ' ', basename( $path ) ) ) : 'esta página' );
+		$type        = $this->cct_type( 'pj_notificacoes' );
+		if ( ! $type || ! method_exists( $type, 'get_item_handler' ) ) {
+			return new WP_Error( 'inmov_ftth_notification_cct_unavailable', 'O CCT de notificações do sistema não está disponível.', array( 'status' => 503 ) );
+		}
+
+		$data = array(
+			'notificacao_titulo'        => 'Acesso não permitido',
+			'notificacao_mensagem'      => sprintf( '%s tentou abrir “%s”, mas não possui a permissão necessária. Contate a gerência para solicitar acesso.', $display, $page_label ),
+			'notificacao_tipo'          => 'alerta',
+			'notificacao_prioridade'    => 'normal',
+			'notificacao_destino_tipo'  => 'usuario',
+			'notificacao_usuarios_ids'  => ',' . $user_id . ',',
+			'notificacao_setores_ids'   => '',
+			'notificacao_perfis'        => '',
+			'notificacao_objeto_tipo'   => 'pagina_restrita',
+			'notificacao_objeto_id'     => absint( url_to_postid( $url ) ),
+			'notificacao_url'           => home_url( '/mapa-da-rede-ftth/' ),
+			'notificacao_criada_por'    => $user_id,
+			'notificacao_criada_em'     => current_time( 'Y-m-d\\TH:i' ),
+			'notificacao_expira_em'     => '1970-01-01T00:00',
+			'notificacao_status'         => 'ativa',
+			'notificacao_dispensavel'   => '1',
+			'notificacao_exige_ciencia' => '0',
+		);
+
+		try {
+			$notification_id = $type->get_item_handler()->update_item( $data );
+		} catch ( Throwable $error ) {
+			return new WP_Error( 'inmov_ftth_access_notification_failed', $error->getMessage(), array( 'status' => 500 ) );
+		}
+		if ( is_wp_error( $notification_id ) || ! $notification_id ) {
+			return new WP_Error( 'inmov_ftth_access_notification_failed', 'O JetEngine não confirmou a criação da notificação.', array( 'status' => 500 ) );
+		}
+
+		set_transient( $dedupe_key, 1, MINUTE_IN_SECONDS );
+		return rest_ensure_response( array(
+			'created'             => true,
+			'notification_id'     => (int) $notification_id,
+			'title'               => $data['notificacao_titulo'],
+			'message'             => $data['notificacao_mensagem'],
+			'type'                => $data['notificacao_tipo'],
+			'url'                 => $data['notificacao_url'],
+			'created_at'          => $data['notificacao_criada_em'],
+			'created_at_display'  => $this->notification_date_label( $data['notificacao_criada_em'] ),
 		) );
 	}
 
@@ -861,6 +944,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'endpoint'   => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications' ) ),
 				'readEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/read' ) ),
 				'readAllEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/read-all' ) ),
+				'accessDeniedEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/access-denied' ) ),
 				'nonce'      => wp_create_nonce( 'wp_rest' ),
 			'pollMs'     => 10000,
 			)

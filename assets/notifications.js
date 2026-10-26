@@ -30,7 +30,7 @@
 	trigger.type = 'button';
 	trigger.setAttribute('aria-label', 'Abrir notificações');
 	trigger.setAttribute('aria-expanded', 'false');
-	trigger.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+	trigger.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span class="inmov-ftth-notification-label">Notificações</span>';
 	var badge = create('span', 'inmov-ftth-notification-badge');
 	badge.hidden = true;
 	trigger.appendChild(badge);
@@ -54,6 +54,36 @@
 	root.appendChild(trigger);
 	root.appendChild(panel);
 	document.body.appendChild(root);
+
+	function isVisibleSidebar(sidebar) {
+		if (!sidebar || window.matchMedia('(max-width: 767px)').matches) return false;
+		var style = window.getComputedStyle(sidebar);
+		var rect = sidebar.getBoundingClientRect();
+		return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+	}
+
+	function syncSidebarPlacement() {
+		var sidebar = document.querySelector('.po-sidebar');
+		if (!isVisibleSidebar(sidebar)) {
+			if (root.parentNode !== document.body) document.body.appendChild(root);
+			root.classList.remove('is-sidebar');
+			root.style.removeProperty('--inmov-ftth-sidebar-width');
+			return;
+		}
+
+		var footer = sidebar.querySelector('.po-sidebar-footer');
+		if (footer && root.parentNode !== sidebar) {
+			sidebar.insertBefore(root, footer);
+		} else if (!footer && root.parentNode !== sidebar) {
+			sidebar.appendChild(root);
+		}
+		root.classList.add('is-sidebar');
+		root.style.setProperty('--inmov-ftth-sidebar-width', Math.round(sidebar.getBoundingClientRect().width) + 'px');
+	}
+
+	syncSidebarPlacement();
+	window.addEventListener('resize', syncSidebarPlacement, { passive: true });
+	window.setTimeout(syncSidebarPlacement, 250);
 
 	var items = [];
 	var loaded = false;

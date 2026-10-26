@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.55
+ * Version: 0.10.56
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.55';
+	const VERSION               = '0.10.56';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -333,6 +333,26 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 	}
 
+	/** Read the just-persisted CCT value back so realtime and list timestamps match. */
+	private function notification_created_values( $notification_id, $fallback_created_at ) {
+		$values = array(
+			'created_at'         => $fallback_created_at,
+			'created_at_display' => $this->notification_date_label( $fallback_created_at ),
+		);
+		$response = $this->get_user_notifications();
+		if ( $response instanceof WP_REST_Response ) {
+			$data = $response->get_data();
+			foreach ( (array) ( $data['items'] ?? array() ) as $item ) {
+				if ( (int) ( $item['id'] ?? 0 ) === (int) $notification_id ) {
+					$values['created_at']         = $item['created_at'] ?? $values['created_at'];
+					$values['created_at_display'] = $item['created_at_display'] ?? $values['created_at_display'];
+					break;
+				}
+			}
+		}
+		return $values;
+	}
+
 	/** Mark one notification as read in the JetEngine readings CCT. */
 	public function mark_notification_read( WP_REST_Request $request ) {
 		$id = absint( $request->get_param( 'notification_id' ) );
@@ -470,6 +490,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 
 		set_transient( $dedupe_key, 1, 5 * MINUTE_IN_SECONDS );
+		$created_values = $this->notification_created_values( $notification_id, $data['notificacao_criada_em'] );
 		return rest_ensure_response( array(
 			'created'            => true,
 			'notification_id'   => (int) $notification_id,
@@ -477,8 +498,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'message'           => $data['notificacao_mensagem'],
 			'type'              => $data['notificacao_tipo'],
 			'url'               => $data['notificacao_url'],
-			'created_at'        => $data['notificacao_criada_em'],
-			'created_at_display'=> $this->notification_date_label( $data['notificacao_criada_em'] ),
+			'created_at'        => $created_values['created_at'],
+			'created_at_display'=> $created_values['created_at_display'],
 		) );
 	}
 
@@ -537,6 +558,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 
 		set_transient( $dedupe_key, 1, MINUTE_IN_SECONDS );
+		$created_values = $this->notification_created_values( $notification_id, $data['notificacao_criada_em'] );
 		return rest_ensure_response( array(
 			'created'             => true,
 			'notification_id'     => (int) $notification_id,
@@ -544,8 +566,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'message'             => $data['notificacao_mensagem'],
 			'type'                => $data['notificacao_tipo'],
 			'url'                 => $data['notificacao_url'],
-			'created_at'          => $data['notificacao_criada_em'],
-			'created_at_display'  => $this->notification_date_label( $data['notificacao_criada_em'] ),
+			'created_at'          => $created_values['created_at'],
+			'created_at_display'  => $created_values['created_at_display'],
 		) );
 	}
 

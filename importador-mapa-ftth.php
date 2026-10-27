@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
-	 * Version: 0.10.62
+	 * Version: 0.10.63
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.62';
+	const VERSION               = '0.10.63';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -292,13 +292,18 @@ final class Inmov_JetEngine_FTTH_Importer {
 			if ( ! $visible || ! $id ) {
 				continue;
 			}
+			$notification_title = sanitize_text_field( $row['notificacao_titulo'] ?? 'Notificação' );
+			$notification_url   = esc_url_raw( $row['notificacao_url'] ?? '' );
+			if ( preg_match( '/acesso\s+n[aã]o\s+permitido|edi[cç][aã]o\s+de\s+ponto\s+sem\s+permiss[aã]o/i', $notification_title ) ) {
+				$notification_url = '';
+			}
 			$output[] = array(
 				'id'           => $id,
-				'title'        => sanitize_text_field( $row['notificacao_titulo'] ?? 'Notificação' ),
+				'title'        => $notification_title,
 				'message'      => wp_strip_all_tags( (string) ( $row['notificacao_mensagem'] ?? '' ) ),
 				'type'         => sanitize_key( $row['notificacao_tipo'] ?? 'informacao' ),
 				'priority'     => sanitize_key( $row['notificacao_prioridade'] ?? 'normal' ),
-				'url'          => esc_url_raw( $row['notificacao_url'] ?? '' ),
+				'url'          => $notification_url,
 				'created_at'   => sanitize_text_field( $row['notificacao_criada_em'] ?? '' ),
 				'created_at_display' => $this->notification_date_label( $row['notificacao_criada_em'] ?? '' ),
 				'read'         => in_array( $id, $read_ids, true ),
@@ -317,17 +322,22 @@ final class Inmov_JetEngine_FTTH_Importer {
 		if ( '' === $raw ) {
 			return '';
 		}
-		$timezone = wp_timezone();
+		$site_timezone = wp_timezone();
 		if ( preg_match( '/^\d{9,13}$/', $raw ) ) {
 			$timestamp = (int) $raw;
 			if ( $timestamp > 100000000000 ) {
 				$timestamp = (int) floor( $timestamp / 1000 );
 			}
-			return wp_date( 'd/m H:i', $timestamp, $timezone );
+			/* JetEngine serializes this CCT datetime as an epoch whose UTC clock
+			 * components represent the local value entered in the form. Keep
+			 * 07:23 as 07:23 instead of converting it back to 04:23. */
+			return wp_date( 'd/m H:i', $timestamp, new DateTimeZone( 'UTC' ) );
 		}
 		try {
-			$date = new DateTimeImmutable( str_replace( 'T', ' ', $raw ), $timezone );
-			return wp_date( 'd/m H:i', $date->getTimestamp(), $timezone );
+			$has_offset = (bool) preg_match( '/(?:Z|[+-]\d{2}:?\d{2})$/i', $raw );
+			$parse_timezone = $has_offset ? $site_timezone : new DateTimeZone( 'UTC' );
+			$date = new DateTimeImmutable( str_replace( 'T', ' ', $raw ), $parse_timezone );
+			return wp_date( 'd/m H:i', $date->getTimestamp(), $has_offset ? $site_timezone : new DateTimeZone( 'UTC' ) );
 		} catch ( Throwable $error ) {
 			return str_replace( 'T', ' ', $raw );
 		}
@@ -445,8 +455,6 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$point_name  = sanitize_text_field( $request->get_param( 'point_name' ) );
 		$point_code  = sanitize_text_field( $request->get_param( 'point_code' ) );
 		$locality    = sanitize_text_field( $request->get_param( 'locality' ) );
-		$user        = wp_get_current_user();
-		$display     = $user->display_name ?: $user->user_login;
 		$description = $point_name ?: ( $point_code ?: 'ponto #' . $point_id );
 		if ( $point_code && $point_code !== $description ) {
 			$description .= ' (' . $point_code . ')';
@@ -462,7 +470,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 		$data = array(
 			'notificacao_titulo'       => 'Edição de ponto sem permissão',
-			'notificacao_mensagem'     => sprintf( '%s tentou editar o ponto “%s”, mas não possui permissão para editar pontos da rede.', $display, $description ),
+			'notificacao_mensagem'     => sprintf( 'Você tentou editar o ponto “%s”, mas não tem permissão para editar pontos da rede.', $description ),
 			'notificacao_tipo'         => 'alerta',
 			'notificacao_prioridade'   => 'normal',
 			'notificacao_destino_tipo' => 'usuario',
@@ -471,7 +479,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'notificacao_perfis'       => '',
 			'notificacao_objeto_tipo'  => 'pontos_rede_ftth',
 			'notificacao_objeto_id'    => $point_id,
-			'notificacao_url'          => home_url( '/mapa-da-rede-ftth/' ),
+			'notificacao_url'          => '',
 			'notificacao_criada_por'   => $user_id,
 			'notificacao_criada_em'    => current_time( 'Y-m-d\\TH:i' ),
 			'notificacao_expira_em'    => '1970-01-01T00:00',
@@ -520,8 +528,6 @@ final class Inmov_JetEngine_FTTH_Importer {
 			return rest_ensure_response( array( 'created' => false, 'deduplicated' => true ) );
 		}
 
-		$user        = wp_get_current_user();
-		$display     = $user->display_name ?: $user->user_login;
 		$page_label  = $label ?: ( $path ? ucwords( str_replace( array( '-', '_' ), ' ', basename( $path ) ) ) : 'esta página' );
 		$type        = $this->cct_type( 'pj_notificacoes' );
 		if ( ! $type || ! method_exists( $type, 'get_item_handler' ) ) {
@@ -530,7 +536,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 		$data = array(
 			'notificacao_titulo'        => 'Acesso não permitido',
-			'notificacao_mensagem'      => sprintf( '%s tentou abrir “%s”, mas não possui a permissão necessária. Contate a gerência para solicitar acesso.', $display, $page_label ),
+			'notificacao_mensagem'      => sprintf( 'Você tentou abrir “%s”, mas não tem a permissão necessária. Contate a gerência para solicitar acesso.', $page_label ),
 			'notificacao_tipo'          => 'alerta',
 			'notificacao_prioridade'    => 'normal',
 			'notificacao_destino_tipo'  => 'usuario',
@@ -539,7 +545,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'notificacao_perfis'        => '',
 			'notificacao_objeto_tipo'   => 'pagina_restrita',
 			'notificacao_objeto_id'     => absint( url_to_postid( $url ) ),
-			'notificacao_url'           => home_url( '/mapa-da-rede-ftth/' ),
+			'notificacao_url'           => '',
 			'notificacao_criada_por'    => $user_id,
 			'notificacao_criada_em'     => current_time( 'Y-m-d\\TH:i' ),
 			'notificacao_expira_em'     => '1970-01-01T00:00',

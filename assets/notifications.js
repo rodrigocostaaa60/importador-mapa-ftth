@@ -302,6 +302,10 @@
 			var timestamp = Number(raw);
 			if (timestamp < 100000000000) timestamp *= 1000;
 			date = new Date(timestamp);
+			/* JetEngine serializes this local datetime field as an epoch whose UTC
+			 * clock components are the values entered in the CCT (07:23 must remain
+			 * 07:23 in Bahia, not become 04:23 after a second timezone conversion). */
+			return date.toLocaleString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 		} else {
 			date = new Date(raw.replace(' ', 'T'));
 		}
@@ -310,7 +314,15 @@
 	}
 
 	function itemDate(item) {
-		return item && (item.created_at ? formatDate(item.created_at) : item.created_at_display || '');
+		return item && (item.created_at_display || (item.created_at ? formatDate(item.created_at) : ''));
+	}
+
+	function hasActionLink(item) {
+		if (!item || !item.url) return false;
+		/* Permission and access-denied notices intentionally stay on the current
+		 * screen. Older CCT rows may still contain the map URL, so suppress it in
+		 * the UI as well as clearing it for newly-created rows in PHP. */
+		return !/(acesso\s+n[aã]o\s+permitido|edi[cç][aã]o\s+de\s+ponto\s+sem\s+permiss[aã]o)/i.test(String(item.title || ''));
 	}
 
 	function showPreview(item) {
@@ -508,7 +520,7 @@
 				readButton.addEventListener('click', function (event) { event.stopPropagation(); markRead(item, card); });
 				actions.appendChild(readButton);
 			}
-			if (item.url) {
+			if (hasActionLink(item)) {
 				var link = create('a', '', 'Abrir');
 				link.href = item.url;
 				link.setAttribute('aria-label', 'Abrir notificação: ' + (item.title || 'Notificação'));
@@ -522,7 +534,7 @@
 			card.addEventListener('click', function (event) {
 				if (event.target && (event.target.tagName === 'A' || event.target.tagName === 'BUTTON')) return;
 				markRead(item, card);
-				if (item.url) window.location.href = item.url;
+				if (hasActionLink(item)) window.location.href = item.url;
 			});
 			list.appendChild(card);
 		});

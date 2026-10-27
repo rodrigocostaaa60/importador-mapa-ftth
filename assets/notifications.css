@@ -725,3 +725,12 @@
 		padding-bottom: max(11px, env(safe-area-inset-bottom));
 	}
 }
+
+/* Keep the mobile bell in the same visual layer as the map search control.
+ * Detail, inventory and settings sheets use a higher layer, so their close
+ * buttons always remain clickable when they are open.  The preview follows
+ * the same rule to avoid covering sheet controls while it is visible. */
+@media (max-width: 767px) {
+	.inmov-ftth-notification-root { z-index: 2000; }
+	.inmov-ftth-notification-preview { z-index: 2000; }
+}

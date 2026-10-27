@@ -679,3 +679,38 @@
 		.inmov-ftth-notification-panel { max-height: min(76vh, 620px); }
 	}
 }
+
+/* Keep the sheet itself fixed while only its list scrolls.  Without an
+ * explicit mobile height, the flex item can grow with long notification
+ * cards and push the footer underneath the browser's bottom controls. */
+@media (max-width: 767px) {
+	.inmov-ftth-notification-panel {
+		box-sizing: border-box;
+		height: min(76dvh, 720px);
+		max-height: none;
+	}
+	.inmov-ftth-notification-panel .inmov-ftth-notification-list {
+		flex: 1 1 0;
+		min-height: 0;
+		overflow-y: auto;
+		overflow-x: hidden;
+		overscroll-behavior: contain;
+	}
+	.inmov-ftth-notification-panel .inmov-ftth-notification-footer {
+		flex: 0 0 auto;
+		position: relative;
+		z-index: 2;
+	}
+	.inmov-ftth-notification-panel.is-expanded {
+		top: max(12px, env(safe-area-inset-top));
+		bottom: max(16px, env(safe-area-inset-bottom));
+		height: auto;
+		max-height: none;
+	}
+}
+
+@supports not (height: 1dvh) {
+	@media (max-width: 767px) {
+		.inmov-ftth-notification-panel { height: min(76vh, 720px); }
+	}
+}

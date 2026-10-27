@@ -551,3 +551,108 @@
 	0%, 100% { transform: translateY(0) scale(1); }
 	50% { transform: translateY(-2px) scale(1.01); }
 }
+
+/* Notification actions share the same compact chip language as the category
+ * tag.  This keeps “Marcar como lida” from looking oversized or colliding
+ * with the tag on narrow cards. */
+.inmov-ftth-notification-read-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 24px;
+	padding: 4px 9px !important;
+	border: 1px solid #dbe5f1 !important;
+	border-radius: 7px;
+	background: #eff6ff !important;
+	color: var(--inmov-ftth-brand) !important;
+	font: 600 10px/1.2 Inter, ui-sans-serif, system-ui, sans-serif !important;
+	letter-spacing: 0;
+	white-space: nowrap;
+	transition: background .14s ease, border-color .14s ease, color .14s ease, transform .14s ease;
+}
+.inmov-ftth-notification-read-button:hover,
+.inmov-ftth-notification-read-button:focus-visible {
+	border-color: var(--inmov-ftth-brand) !important;
+	background: var(--inmov-ftth-brand) !important;
+	color: #fff !important;
+	transform: translateY(-1px);
+	outline: none;
+}
+
+/* Desktop footer: one deliberate action, centered in the available rail. */
+.inmov-ftth-notification-footer {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 52px;
+	padding: 9px 16px;
+}
+.inmov-ftth-notification-mark-all,
+.inmov-ftth-notification-mobile-mark-all {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 30px;
+	padding: 6px 14px !important;
+	border: 1px solid #cfe0f5 !important;
+	border-radius: 9px;
+	background: #eff6ff !important;
+	color: var(--inmov-ftth-brand) !important;
+	font: 700 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif !important;
+	letter-spacing: .01em;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background .14s ease, border-color .14s ease, color .14s ease, transform .14s ease;
+}
+.inmov-ftth-notification-mark-all:hover,
+.inmov-ftth-notification-mobile-mark-all:hover,
+.inmov-ftth-notification-mark-all:focus-visible,
+.inmov-ftth-notification-mobile-mark-all:focus-visible {
+	border-color: var(--inmov-ftth-brand) !important;
+	background: var(--inmov-ftth-brand) !important;
+	color: #fff !important;
+	transform: translateY(-1px);
+	outline: none;
+}
+.inmov-ftth-notification-mark-all:disabled,
+.inmov-ftth-notification-mobile-mark-all:disabled {
+	border-color: #e2e8f0 !important;
+	background: #f8fafc !important;
+	color: #94a3b8 !important;
+	opacity: .8;
+	cursor: default;
+	transform: none;
+}
+.inmov-ftth-notification-mobile-footer { display: none; }
+
+@media (max-width: 767px) {
+	/* Keep the three filters available on phones; the scroller handles very
+	 * narrow viewports without hiding any tab. */
+	.inmov-ftth-notification-filters {
+		display: flex !important;
+		padding: 8px 12px;
+		gap: 5px;
+	}
+	.inmov-ftth-notification-filter-scroller { gap: 5px; overflow-x: auto; }
+	.inmov-ftth-notification-filter {
+		padding: 6px 9px;
+		border-radius: 9px;
+		font-size: 11px;
+	}
+	.inmov-ftth-notification-filter-read-all { padding: 6px 3px 6px 6px; font-size: 10px; }
+	.inmov-ftth-notification-footer {
+		display: block;
+		min-height: 0;
+		padding: 9px 14px 11px;
+	}
+	.inmov-ftth-notification-footer > .inmov-ftth-notification-mark-all { display: none; }
+	.inmov-ftth-notification-mobile-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		width: 100%;
+	}
+	.inmov-ftth-notification-mobile-unread { font-size: 11px; }
+	.inmov-ftth-notification-mobile-mark-all { min-height: 28px; padding: 5px 10px !important; font-size: 10px !important; }
+}

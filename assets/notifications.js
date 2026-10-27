@@ -67,12 +67,6 @@
 	sheetHandle.addEventListener('click', togglePanelExpanded);
 	sheetHandle.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); togglePanelExpanded(); } });
 	var headActions = create('div', 'inmov-ftth-notification-head-actions');
-	var markAllTop = create('button', 'inmov-ftth-notification-head-action');
-	markAllTop.type = 'button';
-	markAllTop.setAttribute('aria-label', 'Marcar todas como lidas');
-	markAllTop.setAttribute('title', 'Marcar todas como lidas');
-	markAllTop.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 4 4L18 6M4 6l4 4m4 4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
-	headActions.appendChild(markAllTop);
 	var close = create('button', 'inmov-ftth-notification-close', '×');
 	close.type = 'button';
 	close.setAttribute('aria-label', 'Fechar notificações');
@@ -108,24 +102,18 @@
 	filterBar.appendChild(filterReadAll);
 	var list = create('div', 'inmov-ftth-notification-list');
 	var footer = create('div', 'inmov-ftth-notification-footer');
-	var footerSync = create('span', 'inmov-ftth-notification-sync');
-	footerSync.innerHTML = '<span class="inmov-ftth-notification-sync-dot"></span><span>Sincronização JetEngine ativa</span>';
-	var footerSettings = create('a', 'inmov-ftth-notification-settings', 'Configurar alertas');
-	footerSettings.href = '#';
-	footerSettings.addEventListener('click', function (event) { event.preventDefault(); });
-	footer.appendChild(footerSync);
-	footer.appendChild(footerSettings);
-	var mobileFooter = create('div', 'inmov-ftth-notification-mobile-footer');
-	var mobileUnreadText = create('span', 'inmov-ftth-notification-mobile-unread', '0 notificações não lidas');
-	var mobileExpand = create('button', 'inmov-ftth-notification-mobile-expand', 'Expandir tela inteira');
-	mobileExpand.type = 'button';
-	mobileExpand.addEventListener('click', togglePanelExpanded);
-	mobileFooter.appendChild(mobileUnreadText);
-	mobileFooter.appendChild(mobileExpand);
-	footer.appendChild(mobileFooter);
 	var markAll = create('button', 'inmov-ftth-notification-mark-all', 'Marcar todas como lidas');
 	markAll.type = 'button';
-	markAllTop.addEventListener('click', function () { markAll.click(); });
+	markAll.setAttribute('aria-label', 'Marcar todas as notificações como lidas');
+	footer.appendChild(markAll);
+	var mobileFooter = create('div', 'inmov-ftth-notification-mobile-footer');
+	var mobileUnreadText = create('span', 'inmov-ftth-notification-mobile-unread', '0 notificações não lidas');
+	var mobileMarkAll = create('button', 'inmov-ftth-notification-mobile-mark-all', 'Marcar todas como lidas');
+	mobileMarkAll.type = 'button';
+	mobileMarkAll.setAttribute('aria-label', 'Marcar todas as notificações como lidas');
+	mobileFooter.appendChild(mobileUnreadText);
+	mobileFooter.appendChild(mobileMarkAll);
+	footer.appendChild(mobileFooter);
 	panel.appendChild(sheetHandle);
 	panel.appendChild(head);
 	panel.appendChild(filterBar);
@@ -237,12 +225,17 @@
 
 	function updateBadge(unread) {
 		var count = Number(unread || 0);
+		var canMarkAll = count > 0;
 		badge.hidden = count < 1;
 		badge.textContent = count > 99 ? '99+' : String(count);
 		trigger.classList.toggle('has-unread', count > 0);
 		panelUnreadPill.textContent = count ? (count > 99 ? '99+ não lidas' : count + ' não lidas') : '0 não lidas';
 		panelUnreadPill.classList.toggle('is-empty', count < 1);
 		mobileUnreadText.textContent = count ? (count > 99 ? '99+ notificações não lidas' : count + ' notificações não lidas') : '0 notificações não lidas';
+		[markAll, mobileMarkAll].forEach(function (button) {
+			button.disabled = !canMarkAll;
+			button.setAttribute('aria-disabled', canMarkAll ? 'false' : 'true');
+		});
 	}
 
 	function typeLabel(type) {
@@ -598,7 +591,7 @@
 			cardFooter.appendChild(create('span', 'inmov-ftth-notification-tag', notificationTag(item)));
 			var actions = create('div', 'inmov-ftth-notification-actions');
 			if (!item.read) {
-				var readButton = create('button', '', 'Marcar como lida');
+				var readButton = create('button', 'inmov-ftth-notification-read-button', 'Marcar como lida');
 				readButton.type = 'button';
 				readButton.addEventListener('click', function (event) { event.stopPropagation(); markRead(item, card); });
 				actions.appendChild(readButton);
@@ -633,7 +626,7 @@
 			loaded = true;
 			updateBadge(data.unread || items.filter(function (item) { return !item.read; }).length);
 			render();
-		syncUrgentAlert();
+			syncUrgentAlert();
 			if (wasLoaded) {
 				nextItems.filter(function (item) { return item && !item.read && item.id && !previousIds[String(item.id)]; }).slice().reverse().forEach(announce);
 			}
@@ -649,14 +642,18 @@
 		if (open) { currentFilter = 'nao-lidas'; refresh(); }
 	});
 	close.addEventListener('click', function () { setOpen(false); });
-	markAll.addEventListener('click', function () {
+	function markAllAsRead(event) {
+		if (event) event.preventDefault();
+		if (markAll.disabled) return;
 		request(config.readAllEndpoint, { method: 'POST' }).then(function () {
 			items.forEach(function (item) { item.read = true; });
 			updateBadge(0);
 			render();
 			syncUrgentAlert();
 		}).catch(function () {});
-	});
+	}
+	markAll.addEventListener('click', markAllAsRead);
+	mobileMarkAll.addEventListener('click', markAllAsRead);
 	preview.querySelector('.inmov-ftth-notification-preview__close').addEventListener('click', function (event) {
 		event.stopPropagation();
 		if (previewItem && isUrgent(previewItem) && !previewItem.read) {

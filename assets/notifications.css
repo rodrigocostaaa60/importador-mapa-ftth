@@ -307,6 +307,7 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
+		flex: 1 1 auto;
 		min-width: 0;
 		overflow-x: auto;
 		padding: 1px 0;
@@ -316,19 +317,22 @@
 .inmov-ftth-notification-filter-scroller::-webkit-scrollbar { display: none; }
 .inmov-ftth-notification-filter {
 		flex: 0 0 auto;
-		padding: 5px 9px;
+		/* Keep all four Stitch-style filters visible beside “Ler todas” in
+		 * the desktop sidebar. The previous 11px labels were wider than the
+		 * available scroller and clipped the Acessos chip to “ACE”. */
+		padding: 4px 5px;
 		border: 1px solid transparent;
 		border-radius: 8px;
 		background: transparent;
 		color: #475569;
-		font: 500 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+		font: 500 10px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
 		cursor: pointer;
 		transition: background .14s ease, color .14s ease, border-color .14s ease, box-shadow .14s ease;
 }
 
 .inmov-ftth-notification-filter:hover { background: #fff; color: var(--inmov-ftth-brand); }
 .inmov-ftth-notification-filter.is-active { border-color: #e2e8f0; background: #fff; color: var(--inmov-ftth-brand); box-shadow: 0 1px 2px rgba(15, 23, 42, .04); font-weight: 700; }
-.inmov-ftth-notification-filter-read-all { flex: 0 0 auto; padding: 4px 2px 4px 5px; border: 0; background: transparent; color: var(--inmov-ftth-brand); font: 500 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.inmov-ftth-notification-filter-read-all { flex: 0 0 auto; padding: 4px 2px 4px 5px; border: 0; background: transparent; color: var(--inmov-ftth-brand); font: 500 10px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
 .inmov-ftth-notification-filter-read-all:hover { text-decoration: underline; }
 .inmov-ftth-notification-meta-type { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .inmov-ftth-notification-unread-dot { width: 7px; height: 7px; border-radius: 999px; background: #2563eb; box-shadow: 0 0 0 2px #dbeafe; }

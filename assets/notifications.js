@@ -82,26 +82,28 @@
 	var filterScroller = create('div', 'inmov-ftth-notification-filter-scroller');
 	var filterDefinitions = [
 		{ key: 'todos', label: 'Todas' },
-		{ key: 'urgente', label: 'Urgentes' },
-		{ key: 'rede', label: 'Rede FTTH' },
-		{ key: 'seguranca', label: 'Acessos' }
+		{ key: 'nao-lidas', label: 'Não lidas' },
+		{ key: 'urgente', label: 'Urgentes' }
 	];
 	var filterButtons = {};
 	filterDefinitions.forEach(function (definition) {
-		var button = create('button', 'inmov-ftth-notification-filter' + (definition.key === 'todos' ? ' is-active' : ''), definition.label);
+		var button = create('button', 'inmov-ftth-notification-filter', definition.label);
 		button.type = 'button';
 		button.dataset.notificationFilter = definition.key;
 		button.addEventListener('click', function () {
 			currentFilter = definition.key;
-			Object.keys(filterButtons).forEach(function (key) { filterButtons[key].classList.toggle('is-active', key === currentFilter); });
 			render();
 		});
 		filterButtons[definition.key] = button;
 		filterScroller.appendChild(button);
 	});
-	var filterReadAll = create('button', 'inmov-ftth-notification-filter-read-all', 'Ler todas');
+	var filterReadAll = create('button', 'inmov-ftth-notification-filter-read-all', 'Ver todas');
 	filterReadAll.type = 'button';
-	filterReadAll.addEventListener('click', function () { markAll.click(); });
+	filterReadAll.setAttribute('aria-label', 'Ver todas as notificações');
+	filterReadAll.addEventListener('click', function () {
+		currentFilter = 'todos';
+		render();
+	});
 	filterBar.appendChild(filterScroller);
 	filterBar.appendChild(filterReadAll);
 	var list = create('div', 'inmov-ftth-notification-list');
@@ -218,7 +220,7 @@
 
 	var items = [];
 	var loaded = false;
-	var currentFilter = 'todos';
+	var currentFilter = 'nao-lidas';
 
 	function setOpen(open) {
 		panel.classList.toggle('is-open', !!open);
@@ -238,28 +240,43 @@
 
 	function typeLabel(type) {
 		var labels = { alerta: 'Alerta', urgente: 'Urgente', sucesso: 'Concluído', demanda: 'Demanda', manutencao: 'Manutenção', feedback: 'Aviso', informacao: 'Informação' };
-		return labels[type] || 'Notificação';
+		return labels[notificationTypeKey(type)] || 'Notificação';
+	}
+
+	function notificationTypeKey(value) {
+		var raw = value && typeof value === 'object' ? (value.type || value.notificacao_tipo || value.category || value.categoria || '') : value;
+		var token = String(raw || '').trim().toLowerCase().normalize ? String(raw || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s_-]+/g, '') : String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+		var aliases = {
+			alerta: 'alerta', alert: 'alerta', erro: 'alerta', error: 'alerta', danger: 'alerta',
+			urgente: 'urgente', urgent: 'urgente', warning: 'urgente', prioridade: 'urgente',
+			sucesso: 'sucesso', success: 'sucesso', concluido: 'sucesso', concluida: 'sucesso', ok: 'sucesso',
+			demanda: 'demanda', pendencia: 'demanda', tarefa: 'demanda', solicitacao: 'demanda',
+			manutencao: 'manutencao', maintenance: 'manutencao',
+			feedback: 'feedback', aviso: 'feedback',
+			informacao: 'informacao', info: 'informacao', information: 'informacao'
+		};
+		return aliases[token] || 'informacao';
 	}
 
 	function notificationTag(item) {
 		var value = [item && item.title, item && item.message].filter(Boolean).join(' ').toLowerCase();
 		if (/(acesso|permiss[aã]o|seguran[cç]a|restri[cç][aã]o)/i.test(value)) return 'Acessos';
 		if (/(rede|ftth|fibra|cabo|olt|cto|pop|ponto|mapa|sincroniza)/i.test(value)) return 'Rede FTTH';
-		if (item && item.type === 'manutencao') return 'Operação';
-		return typeLabel(item && item.type);
+		if (notificationTypeKey(item) === 'manutencao') return 'Operação';
+		return typeLabel(item);
 	}
 
 	function matchesFilter(item) {
 		if (currentFilter === 'todos') return true;
+		if (currentFilter === 'nao-lidas') return !!item && !item.read;
 		var text = [item && item.title, item && item.message, item && item.url].filter(Boolean).join(' ');
-		if (currentFilter === 'urgente') return item && (item.type === 'urgente' || item.type === 'alerta' || item.priority === 'urgente');
-		if (currentFilter === 'seguranca') return /(acesso|permiss[aã]o|seguran[cç]a|restri[cç][aã]o|negado)/i.test(text) || (item && item.type === 'alerta');
-		if (currentFilter === 'rede') return /(rede|ftth|fibra|cabo|olt|cto|pop|ponto|mapa|opera[cç][aã]o|manuten[cç][aã]o)/i.test(text);
+		if (currentFilter === 'urgente') return item && (notificationTypeKey(item) === 'urgente' || notificationTypeKey(item) === 'alerta' || notificationTypeKey(item) === 'demanda' || item.priority === 'urgente' || item.priority === 'alta' || /(urgente|pend[eê]ncia|alerta do sistema|sistema)/i.test(text));
 		return true;
 	}
 
 	function notificationIconSvg(type, read) {
 		if (read) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+		type = notificationTypeKey(type);
 		var paths = {
 			alerta: '<path d="M12 3 4 6v5c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="M12 8v4m0 3h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>',
 			urgente: '<path d="m12 3 9 17H3L12 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="M12 9v4m0 3h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>',
@@ -275,6 +292,12 @@
 		if (!value) return '';
 		var raw = String(value).trim();
 		var date;
+		/* JetEngine stores this field as a local wall-clock value
+		 * (YYYY-MM-DDTHH:mm). Preserve that value instead of letting a browser
+		 * running in UTC convert Bahia's 07:23 to 04:23. Values that carry an
+		 * explicit offset are still converted to the site's Brazilian timezone. */
+		var localParts = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);
+		if (localParts) return localParts[3] + '/' + localParts[2] + ' ' + localParts[4] + ':' + localParts[5];
 		if (/^\d{9,13}$/.test(raw)) {
 			var timestamp = Number(raw);
 			if (timestamp < 100000000000) timestamp *= 1000;
@@ -283,11 +306,11 @@
 			date = new Date(raw.replace(' ', 'T'));
 		}
 		if (isNaN(date.getTime())) return String(value).replace('T', ' ');
-		return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+		return date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 	}
 
 	function itemDate(item) {
-		return item && (item.created_at_display || formatDate(item.created_at));
+		return item && (item.created_at ? formatDate(item.created_at) : item.created_at_display || '');
 	}
 
 	function showPreview(item) {
@@ -298,12 +321,13 @@
 		var message = preview.querySelector('p');
 		var time = preview.querySelector('time');
 		var type = preview.querySelector('.inmov-ftth-notification-preview__meta span');
-		marker.innerHTML = notificationIconSvg(item.type, false);
+		var itemType = notificationTypeKey(item);
+		marker.innerHTML = notificationIconSvg(itemType, false);
 		title.textContent = item.title || 'Nova notificação';
 		message.textContent = item.message || '';
 		time.textContent = itemDate(item) || 'agora';
-		type.textContent = typeLabel(item.type);
-		preview.className = 'inmov-ftth-notification-preview is-visible is-' + (item.type || 'informacao');
+		type.textContent = typeLabel(itemType);
+		preview.className = 'inmov-ftth-notification-preview is-visible is-' + itemType;
 		preview.setAttribute('aria-hidden', 'false');
 		if (previewTimer) window.clearTimeout(previewTimer);
 		previewTimer = window.setTimeout(function () {
@@ -447,6 +471,7 @@
 	function render() {
 		list.textContent = '';
 		Object.keys(filterButtons).forEach(function (key) { filterButtons[key].classList.toggle('is-active', key === currentFilter); });
+		filterReadAll.hidden = currentFilter === 'todos';
 		var visibleItems = items.filter(matchesFilter);
 		if (!visibleItems.length) {
 			var empty = create('div', 'inmov-ftth-notification-empty');
@@ -459,14 +484,15 @@
 			return;
 		}
 		visibleItems.forEach(function (item) {
-			var card = create('article', 'inmov-ftth-notification-card' + (item.read ? '' : ' is-unread') + ' is-' + (item.type || 'informacao'));
+			var itemType = notificationTypeKey(item);
+			var card = create('article', 'inmov-ftth-notification-card' + (item.read ? '' : ' is-unread') + ' is-' + itemType);
 			var marker = create('span', 'inmov-ftth-notification-marker');
-			marker.innerHTML = notificationIconSvg(item.type, !!item.read);
-			marker.setAttribute('aria-label', item.read ? 'Lida' : typeLabel(item.type));
+			marker.innerHTML = notificationIconSvg(itemType, !!item.read);
+			marker.setAttribute('aria-label', item.read ? 'Lida' : typeLabel(itemType));
 			var body = create('div', 'inmov-ftth-notification-card-body');
 			var meta = create('div', 'inmov-ftth-notification-meta');
 			var metaType = create('span', 'inmov-ftth-notification-meta-type');
-			metaType.appendChild(create('span', 'inmov-ftth-notification-type', typeLabel(item.type)));
+			metaType.appendChild(create('span', 'inmov-ftth-notification-type', typeLabel(itemType)));
 			if (!item.read) metaType.appendChild(create('span', 'inmov-ftth-notification-unread-dot'));
 			meta.appendChild(metaType);
 			if (item.created_at || item.created_at_display) meta.appendChild(create('time', '', itemDate(item)));
@@ -524,7 +550,7 @@
 		unlockNotificationAudio();
 		var open = !panel.classList.contains('is-open');
 		setOpen(open);
-		if (open) refresh();
+		if (open) { currentFilter = 'nao-lidas'; refresh(); }
 	});
 	close.addEventListener('click', function () { setOpen(false); });
 	markAll.addEventListener('click', function () {
@@ -542,6 +568,7 @@
 	preview.addEventListener('click', function (event) {
 		if (event.target && event.target.closest && event.target.closest('button')) return;
 		setOpen(true);
+		currentFilter = 'nao-lidas';
 		refresh();
 	});
 	document.addEventListener('click', function (event) {

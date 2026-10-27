@@ -52,18 +52,81 @@
 	headMain.appendChild(headText);
 	head.appendChild(headMain);
 	var sheetHandle = create('div', 'inmov-ftth-notification-sheet-handle');
-	sheetHandle.setAttribute('aria-hidden', 'true');
+	sheetHandle.setAttribute('role', 'button');
+	sheetHandle.setAttribute('tabindex', '0');
+	sheetHandle.setAttribute('aria-label', 'Expandir ou recolher notificações');
+	sheetHandle.innerHTML = '<span></span><small>Toque para expandir</small>';
+	var panelExpanded = false;
+	function togglePanelExpanded() {
+		panelExpanded = !panelExpanded;
+		panel.classList.toggle('is-expanded', panelExpanded);
+		sheetHandle.setAttribute('aria-label', panelExpanded ? 'Recolher notificações' : 'Expandir notificações');
+		var label = sheetHandle.querySelector('small');
+		if (label) label.textContent = panelExpanded ? 'Toque para recolher' : 'Toque para expandir';
+	}
+	sheetHandle.addEventListener('click', togglePanelExpanded);
+	sheetHandle.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); togglePanelExpanded(); } });
+	var headActions = create('div', 'inmov-ftth-notification-head-actions');
+	var markAllTop = create('button', 'inmov-ftth-notification-head-action');
+	markAllTop.type = 'button';
+	markAllTop.setAttribute('aria-label', 'Marcar todas como lidas');
+	markAllTop.setAttribute('title', 'Marcar todas como lidas');
+	markAllTop.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 4 4L18 6M4 6l4 4m4 4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+	headActions.appendChild(markAllTop);
 	var close = create('button', 'inmov-ftth-notification-close', '×');
 	close.type = 'button';
 	close.setAttribute('aria-label', 'Fechar notificações');
-	head.appendChild(close);
+	headActions.appendChild(close);
+	head.appendChild(headActions);
+	var filterBar = create('div', 'inmov-ftth-notification-filters');
+	var filterScroller = create('div', 'inmov-ftth-notification-filter-scroller');
+	var filterDefinitions = [
+		{ key: 'todos', label: 'Todas' },
+		{ key: 'urgente', label: 'Urgentes' },
+		{ key: 'rede', label: 'Rede FTTH' },
+		{ key: 'seguranca', label: 'Acessos' }
+	];
+	var filterButtons = {};
+	filterDefinitions.forEach(function (definition) {
+		var button = create('button', 'inmov-ftth-notification-filter' + (definition.key === 'todos' ? ' is-active' : ''), definition.label);
+		button.type = 'button';
+		button.dataset.notificationFilter = definition.key;
+		button.addEventListener('click', function () {
+			currentFilter = definition.key;
+			Object.keys(filterButtons).forEach(function (key) { filterButtons[key].classList.toggle('is-active', key === currentFilter); });
+			render();
+		});
+		filterButtons[definition.key] = button;
+		filterScroller.appendChild(button);
+	});
+	var filterReadAll = create('button', 'inmov-ftth-notification-filter-read-all', 'Ler todas');
+	filterReadAll.type = 'button';
+	filterReadAll.addEventListener('click', function () { markAll.click(); });
+	filterBar.appendChild(filterScroller);
+	filterBar.appendChild(filterReadAll);
 	var list = create('div', 'inmov-ftth-notification-list');
 	var footer = create('div', 'inmov-ftth-notification-footer');
+	var footerSync = create('span', 'inmov-ftth-notification-sync');
+	footerSync.innerHTML = '<span class="inmov-ftth-notification-sync-dot"></span><span>Sincronização JetEngine ativa</span>';
+	var footerSettings = create('a', 'inmov-ftth-notification-settings', 'Configurar alertas');
+	footerSettings.href = '#';
+	footerSettings.addEventListener('click', function (event) { event.preventDefault(); });
+	footer.appendChild(footerSync);
+	footer.appendChild(footerSettings);
+	var mobileFooter = create('div', 'inmov-ftth-notification-mobile-footer');
+	var mobileUnreadText = create('span', 'inmov-ftth-notification-mobile-unread', '0 notificações não lidas');
+	var mobileExpand = create('button', 'inmov-ftth-notification-mobile-expand', 'Expandir tela inteira');
+	mobileExpand.type = 'button';
+	mobileExpand.addEventListener('click', togglePanelExpanded);
+	mobileFooter.appendChild(mobileUnreadText);
+	mobileFooter.appendChild(mobileExpand);
+	footer.appendChild(mobileFooter);
 	var markAll = create('button', 'inmov-ftth-notification-mark-all', 'Marcar todas como lidas');
 	markAll.type = 'button';
-	footer.appendChild(markAll);
+	markAllTop.addEventListener('click', function () { markAll.click(); });
 	panel.appendChild(sheetHandle);
 	panel.appendChild(head);
+	panel.appendChild(filterBar);
 	panel.appendChild(list);
 	panel.appendChild(footer);
 	root.appendChild(trigger);
@@ -155,6 +218,7 @@
 
 	var items = [];
 	var loaded = false;
+	var currentFilter = 'todos';
 
 	function setOpen(open) {
 		panel.classList.toggle('is-open', !!open);
@@ -169,11 +233,42 @@
 		trigger.classList.toggle('has-unread', count > 0);
 		panelUnreadPill.textContent = count ? (count > 99 ? '99+ não lidas' : count + ' não lidas') : '0 não lidas';
 		panelUnreadPill.classList.toggle('is-empty', count < 1);
+		mobileUnreadText.textContent = count ? (count > 99 ? '99+ notificações não lidas' : count + ' notificações não lidas') : '0 notificações não lidas';
 	}
 
 	function typeLabel(type) {
 		var labels = { alerta: 'Alerta', urgente: 'Urgente', sucesso: 'Concluído', demanda: 'Demanda', manutencao: 'Manutenção', feedback: 'Aviso', informacao: 'Informação' };
 		return labels[type] || 'Notificação';
+	}
+
+	function notificationTag(item) {
+		var value = [item && item.title, item && item.message].filter(Boolean).join(' ').toLowerCase();
+		if (/(acesso|permiss[aã]o|seguran[cç]a|restri[cç][aã]o)/i.test(value)) return 'Acessos';
+		if (/(rede|ftth|fibra|cabo|olt|cto|pop|ponto|mapa|sincroniza)/i.test(value)) return 'Rede FTTH';
+		if (item && item.type === 'manutencao') return 'Operação';
+		return typeLabel(item && item.type);
+	}
+
+	function matchesFilter(item) {
+		if (currentFilter === 'todos') return true;
+		var text = [item && item.title, item && item.message, item && item.url].filter(Boolean).join(' ');
+		if (currentFilter === 'urgente') return item && (item.type === 'urgente' || item.type === 'alerta' || item.priority === 'urgente');
+		if (currentFilter === 'seguranca') return /(acesso|permiss[aã]o|seguran[cç]a|restri[cç][aã]o|negado)/i.test(text) || (item && item.type === 'alerta');
+		if (currentFilter === 'rede') return /(rede|ftth|fibra|cabo|olt|cto|pop|ponto|mapa|opera[cç][aã]o|manuten[cç][aã]o)/i.test(text);
+		return true;
+	}
+
+	function notificationIconSvg(type, read) {
+		if (read) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+		var paths = {
+			alerta: '<path d="M12 3 4 6v5c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="M12 8v4m0 3h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>',
+			urgente: '<path d="m12 3 9 17H3L12 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="M12 9v4m0 3h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>',
+			sucesso: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="m8 12 2.5 2.5L16.5 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>',
+			manutencao: '<path d="M14.7 6.3a4 4 0 0 0-5 5L4 17l3 3 5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.1-2.1 2.5-2.3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>',
+			demanda: '<path d="M7 7h10M7 12h6M7 17h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M5 4h14v16H5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>',
+			informacao: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M12 11v5m0-8h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>'
+		};
+		return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (paths[type] || paths.informacao) + '</svg>';
 	}
 
 	function formatDate(value) {
@@ -203,7 +298,7 @@
 		var message = preview.querySelector('p');
 		var time = preview.querySelector('time');
 		var type = preview.querySelector('.inmov-ftth-notification-preview__meta span');
-		marker.textContent = item.type === 'alerta' || item.type === 'urgente' ? '!' : '•';
+		marker.innerHTML = notificationIconSvg(item.type, false);
 		title.textContent = item.title || 'Nova notificação';
 		message.textContent = item.message || '';
 		time.textContent = itemDate(item) || 'agora';
@@ -342,7 +437,7 @@
 				card.classList.remove('is-unread');
 				var marker = card.querySelector('.inmov-ftth-notification-marker');
 				var readButton = card.querySelector('.inmov-ftth-notification-actions button');
-				if (marker) marker.textContent = '✓';
+				if (marker) { marker.innerHTML = notificationIconSvg('sucesso', true); marker.setAttribute('aria-label', 'Lida'); }
 				if (readButton) readButton.remove();
 			}
 			updateBadge(items.filter(function (entry) { return !entry.read; }).length);
@@ -351,24 +446,35 @@
 
 	function render() {
 		list.textContent = '';
-		if (!items.length) {
+		Object.keys(filterButtons).forEach(function (key) { filterButtons[key].classList.toggle('is-active', key === currentFilter); });
+		var visibleItems = items.filter(matchesFilter);
+		if (!visibleItems.length) {
 			var empty = create('div', 'inmov-ftth-notification-empty');
-			empty.appendChild(create('span', 'inmov-ftth-notification-empty-icon', '✓'));
-			empty.appendChild(create('strong', '', 'Tudo em dia'));
-			empty.appendChild(create('p', '', 'Você não tem notificações novas.'));
+			var emptyIcon = create('span', 'inmov-ftth-notification-empty-icon');
+			emptyIcon.innerHTML = notificationIconSvg('sucesso', true);
+			empty.appendChild(emptyIcon);
+			empty.appendChild(create('strong', '', items.length ? 'Nenhuma notificação neste filtro' : 'Tudo em dia'));
+			empty.appendChild(create('p', '', items.length ? 'Escolha outro filtro para visualizar os avisos.' : 'Você não tem notificações novas.'));
 			list.appendChild(empty);
 			return;
 		}
-		items.forEach(function (item) {
+		visibleItems.forEach(function (item) {
 			var card = create('article', 'inmov-ftth-notification-card' + (item.read ? '' : ' is-unread') + ' is-' + (item.type || 'informacao'));
-			var marker = create('span', 'inmov-ftth-notification-marker', item.read ? '✓' : '!');
+			var marker = create('span', 'inmov-ftth-notification-marker');
+			marker.innerHTML = notificationIconSvg(item.type, !!item.read);
+			marker.setAttribute('aria-label', item.read ? 'Lida' : typeLabel(item.type));
 			var body = create('div', 'inmov-ftth-notification-card-body');
 			var meta = create('div', 'inmov-ftth-notification-meta');
-			meta.appendChild(create('span', 'inmov-ftth-notification-type', typeLabel(item.type)));
+			var metaType = create('span', 'inmov-ftth-notification-meta-type');
+			metaType.appendChild(create('span', 'inmov-ftth-notification-type', typeLabel(item.type)));
+			if (!item.read) metaType.appendChild(create('span', 'inmov-ftth-notification-unread-dot'));
+			meta.appendChild(metaType);
 			if (item.created_at || item.created_at_display) meta.appendChild(create('time', '', itemDate(item)));
 			body.appendChild(meta);
 			body.appendChild(create('strong', 'inmov-ftth-notification-title', item.title || 'Notificação'));
 			if (item.message) body.appendChild(create('p', 'inmov-ftth-notification-message', item.message));
+			var cardFooter = create('div', 'inmov-ftth-notification-card-footer');
+			cardFooter.appendChild(create('span', 'inmov-ftth-notification-tag', notificationTag(item)));
 			var actions = create('div', 'inmov-ftth-notification-actions');
 			if (!item.read) {
 				var readButton = create('button', '', 'Marcar como lida');
@@ -379,10 +485,12 @@
 			if (item.url) {
 				var link = create('a', '', 'Abrir');
 				link.href = item.url;
+				link.setAttribute('aria-label', 'Abrir notificação: ' + (item.title || 'Notificação'));
 				link.addEventListener('click', function () { markRead(item, card); });
 				actions.appendChild(link);
 			}
-			if (actions.childNodes.length) body.appendChild(actions);
+			if (actions.childNodes.length) cardFooter.appendChild(actions);
+			body.appendChild(cardFooter);
 			card.appendChild(marker);
 			card.appendChild(body);
 			card.addEventListener('click', function (event) {

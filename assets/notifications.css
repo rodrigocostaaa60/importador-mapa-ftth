@@ -714,3 +714,14 @@
 		.inmov-ftth-notification-panel { height: min(76vh, 720px); }
 	}
 }
+
+/* The sheet must meet the bottom edge of the mobile viewport.  The previous
+ * 10/16px outer offsets created the visible strip of map below it.  Keep the
+ * safe-area protection inside the footer instead of leaving an outer gap. */
+@media (max-width: 767px) {
+	.inmov-ftth-notification-panel { bottom: 0; }
+	.inmov-ftth-notification-panel.is-expanded { bottom: 0; }
+	.inmov-ftth-notification-panel .inmov-ftth-notification-footer {
+		padding-bottom: max(11px, env(safe-area-inset-bottom));
+	}
+}

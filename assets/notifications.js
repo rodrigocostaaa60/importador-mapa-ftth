@@ -83,7 +83,7 @@
 	var filterDefinitions = [
 		{ key: 'todos', label: 'Todas' },
 		{ key: 'nao-lidas', label: 'Não lidas' },
-		{ key: 'urgente', label: 'Urgentes' }
+		{ key: 'importante', label: 'Importantes' }
 	];
 	var filterButtons = {};
 	filterDefinitions.forEach(function (definition) {
@@ -145,6 +145,8 @@
 	var previewItem = null;
 	var announcedIds = {};
 	var audioContext = null;
+	var urgentAudioTimer = null;
+	var urgentAlertItem = null;
 	var pendingAnnouncements = [];
 	var accessChecks = new WeakSet();
 
@@ -156,7 +158,11 @@
 	});
 
 	function unlockNotificationAudio() {
-		if (audioContext || !window.AudioContext && !window.webkitAudioContext) return;
+		if (!window.AudioContext && !window.webkitAudioContext) return;
+		if (audioContext) {
+			if (audioContext.state === 'suspended') audioContext.resume().catch(function () {});
+			return;
+		}
 		try {
 			var AudioCtor = window.AudioContext || window.webkitAudioContext;
 			audioContext = new AudioCtor();
@@ -167,6 +173,7 @@
 	function playNotificationSound() {
 		unlockNotificationAudio();
 		if (!audioContext) return;
+		if (audioContext.state === 'suspended') return;
 		try {
 			var now = audioContext.currentTime;
 			[0, 0.13].forEach(function (offset, index) {
@@ -258,6 +265,31 @@
 		return aliases[token] || 'informacao';
 	}
 
+	function notificationPriorityKey(value) {
+		var raw = value && typeof value === 'object' ? (value.priority || value.notificacao_prioridade || value.prioridade || '') : value;
+		var token = String(raw || '').trim().toLowerCase().normalize ? String(raw || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s_-]+/g, '') : String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+		var aliases = {
+			baixa: 'baixa', low: 'baixa', normal: 'normal', media: 'normal', medio: 'normal', média: 'normal',
+			alta: 'alta', high: 'alta', importante: 'alta',
+			urgente: 'urgente', urgent: 'urgente', critica: 'urgente', critico: 'urgente', critical: 'urgente'
+		};
+		return aliases[token] || 'normal';
+	}
+
+	function priorityLabel(item) {
+		var priority = notificationPriorityKey(item);
+		return priority === 'urgente' ? 'Urgente' : (priority === 'alta' ? 'Importante' : '');
+	}
+
+	function isImportant(item) {
+		var priority = notificationPriorityKey(item);
+		return priority === 'alta' || priority === 'urgente';
+	}
+
+	function isUrgent(item) {
+		return notificationPriorityKey(item) === 'urgente';
+	}
+
 	function notificationTag(item) {
 		var value = [item && item.title, item && item.message].filter(Boolean).join(' ').toLowerCase();
 		if (/(acesso|permiss[aã]o|seguran[cç]a|restri[cç][aã]o)/i.test(value)) return 'Acessos';
@@ -269,8 +301,7 @@
 	function matchesFilter(item) {
 		if (currentFilter === 'todos') return true;
 		if (currentFilter === 'nao-lidas') return !!item && !item.read;
-		var text = [item && item.title, item && item.message, item && item.url].filter(Boolean).join(' ');
-		if (currentFilter === 'urgente') return item && (notificationTypeKey(item) === 'urgente' || notificationTypeKey(item) === 'alerta' || notificationTypeKey(item) === 'demanda' || item.priority === 'urgente' || item.priority === 'alta' || /(urgente|pend[eê]ncia|alerta do sistema|sistema)/i.test(text));
+		if (currentFilter === 'importante') return isImportant(item);
 		return true;
 	}
 
@@ -325,28 +356,76 @@
 		return !/(acesso\s+n[aã]o\s+permitido|edi[cç][aã]o\s+de\s+ponto\s+sem\s+permiss[aã]o)/i.test(String(item.title || ''));
 	}
 
-	function showPreview(item) {
+	function hidePreview() {
+		preview.classList.remove('is-visible', 'is-persistent');
+		preview.setAttribute('aria-hidden', 'true');
+		preview.setAttribute('aria-live', 'polite');
+	}
+
+	function startUrgentAlert(item) {
+		urgentAlertItem = item;
+		if (urgentAudioTimer) return;
+		playNotificationSound();
+		urgentAudioTimer = window.setInterval(function () {
+			if (!urgentAlertItem || urgentAlertItem.read || !isUrgent(urgentAlertItem)) {
+				stopUrgentAlert();
+				return;
+			}
+			playNotificationSound();
+		}, 2800);
+	}
+
+	function stopUrgentAlert() {
+		if (urgentAudioTimer) window.clearInterval(urgentAudioTimer);
+		urgentAudioTimer = null;
+		urgentAlertItem = null;
+		if (previewItem && isUrgent(previewItem) && !previewItem.read) hidePreview();
+	}
+
+	function syncUrgentAlert() {
+		var urgentItems = items.filter(function (item) { return item && !item.read && isUrgent(item); });
+		if (!urgentItems.length) {
+			stopUrgentAlert();
+			return;
+		}
+		var item = urgentItems[0];
+		if (!preview.classList.contains('is-visible') || !preview.classList.contains('is-persistent') || !previewItem || String(previewItem.id) !== String(item.id)) showPreview(item, true);
+		else urgentAlertItem = item;
+		startUrgentAlert(item);
+	}
+
+	function showPreview(item, persistent) {
 		if (!item) return;
+		persistent = !!persistent || isUrgent(item);
 		previewItem = item;
 		var marker = preview.querySelector('.inmov-ftth-notification-preview__marker');
 		var title = preview.querySelector('strong');
 		var message = preview.querySelector('p');
 		var time = preview.querySelector('time');
 		var type = preview.querySelector('.inmov-ftth-notification-preview__meta span');
+		var closeButton = preview.querySelector('.inmov-ftth-notification-preview__close');
 		var itemType = notificationTypeKey(item);
 		marker.innerHTML = notificationIconSvg(itemType, false);
 		title.textContent = item.title || 'Nova notificação';
 		message.textContent = item.message || '';
 		time.textContent = itemDate(item) || 'agora';
-		type.textContent = typeLabel(itemType);
-		preview.className = 'inmov-ftth-notification-preview is-visible is-' + itemType;
+		var priority = priorityLabel(item);
+		type.textContent = typeLabel(itemType) + (priority ? ' · ' + priority : '');
+		preview.className = 'inmov-ftth-notification-preview is-visible is-' + itemType + ' is-priority-' + notificationPriorityKey(item) + (persistent ? ' is-persistent' : '');
 		preview.setAttribute('aria-hidden', 'false');
+		preview.setAttribute('aria-live', persistent ? 'assertive' : 'polite');
+		if (closeButton) {
+			closeButton.textContent = persistent ? '✓' : '×';
+			closeButton.setAttribute('aria-label', persistent ? 'Marcar alerta como lido' : 'Fechar aviso');
+		}
 		if (previewTimer) window.clearTimeout(previewTimer);
-		previewTimer = window.setTimeout(function () {
-			preview.classList.remove('is-visible');
-			preview.setAttribute('aria-hidden', 'true');
-		}, 8000);
-		playNotificationSound();
+		previewTimer = null;
+		if (!persistent) {
+			previewTimer = window.setTimeout(hidePreview, 8000);
+			playNotificationSound();
+		} else {
+			startUrgentAlert(item);
+		}
 	}
 
 	function announce(item) {
@@ -477,6 +556,7 @@
 				if (readButton) readButton.remove();
 			}
 			updateBadge(items.filter(function (entry) { return !entry.read; }).length);
+			syncUrgentAlert();
 		}).catch(function () {});
 	}
 
@@ -497,7 +577,8 @@
 		}
 		visibleItems.forEach(function (item) {
 			var itemType = notificationTypeKey(item);
-			var card = create('article', 'inmov-ftth-notification-card' + (item.read ? '' : ' is-unread') + ' is-' + itemType);
+			var itemPriority = notificationPriorityKey(item);
+			var card = create('article', 'inmov-ftth-notification-card' + (item.read ? '' : ' is-unread') + ' is-' + itemType + ' is-priority-' + itemPriority);
 			var marker = create('span', 'inmov-ftth-notification-marker');
 			marker.innerHTML = notificationIconSvg(itemType, !!item.read);
 			marker.setAttribute('aria-label', item.read ? 'Lida' : typeLabel(itemType));
@@ -505,6 +586,8 @@
 			var meta = create('div', 'inmov-ftth-notification-meta');
 			var metaType = create('span', 'inmov-ftth-notification-meta-type');
 			metaType.appendChild(create('span', 'inmov-ftth-notification-type', typeLabel(itemType)));
+			var itemPriorityLabel = priorityLabel(item);
+			if (itemPriorityLabel) metaType.appendChild(create('span', 'inmov-ftth-notification-priority', itemPriorityLabel));
 			if (!item.read) metaType.appendChild(create('span', 'inmov-ftth-notification-unread-dot'));
 			meta.appendChild(metaType);
 			if (item.created_at || item.created_at_display) meta.appendChild(create('time', '', itemDate(item)));
@@ -550,6 +633,7 @@
 			loaded = true;
 			updateBadge(data.unread || items.filter(function (item) { return !item.read; }).length);
 			render();
+		syncUrgentAlert();
 			if (wasLoaded) {
 				nextItems.filter(function (item) { return item && !item.read && item.id && !previousIds[String(item.id)]; }).slice().reverse().forEach(announce);
 			}
@@ -570,12 +654,16 @@
 			items.forEach(function (item) { item.read = true; });
 			updateBadge(0);
 			render();
+			syncUrgentAlert();
 		}).catch(function () {});
 	});
 	preview.querySelector('.inmov-ftth-notification-preview__close').addEventListener('click', function (event) {
 		event.stopPropagation();
-		preview.classList.remove('is-visible');
-		preview.setAttribute('aria-hidden', 'true');
+		if (previewItem && isUrgent(previewItem) && !previewItem.read) {
+			markRead(previewItem);
+			return;
+		}
+		hidePreview();
 	});
 	preview.addEventListener('click', function (event) {
 		if (event.target && event.target.closest && event.target.closest('button')) return;

@@ -524,3 +524,30 @@
 		max-height: min(700px, calc(100vh - 160px));
 	}
 }
+
+.inmov-ftth-notification-priority {
+	display: inline-flex;
+	align-items: center;
+	margin-left: 6px;
+	padding: 2px 6px;
+	border-radius: 999px;
+	background: #fff7ed;
+	color: #c2410c;
+	font-size: 9px;
+	font-weight: 800;
+	letter-spacing: .03em;
+}
+.is-priority-urgente .inmov-ftth-notification-priority { background: #fee2e2; color: #b91c1c; }
+.is-priority-urgente .inmov-ftth-notification-marker { background: #fee2e2; color: #dc2626; }
+.is-priority-alta .inmov-ftth-notification-marker { background: #fef3c7; color: #b45309; }
+.inmov-ftth-notification-preview.is-persistent {
+	border-color: #fca5a5;
+	box-shadow: 0 0 0 3px rgba(239, 68, 68, .12), 0 18px 45px rgba(127, 29, 29, .24);
+	animation: inmov-ftth-notification-urgent-pulse 1.8s ease-in-out infinite;
+}
+.inmov-ftth-notification-preview.is-priority-alta { border-color: #fcd34d; }
+.inmov-ftth-notification-preview.is-priority-urgente .inmov-ftth-notification-preview__marker { background: #fee2e2; color: #dc2626; }
+@keyframes inmov-ftth-notification-urgent-pulse {
+	0%, 100% { transform: translateY(0) scale(1); }
+	50% { transform: translateY(-2px) scale(1.01); }
+}

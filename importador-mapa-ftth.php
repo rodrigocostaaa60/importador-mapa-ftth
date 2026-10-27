@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
-	 * Version: 0.10.63
+	 * Version: 0.10.64
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.63';
+	const VERSION               = '0.10.64';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -472,7 +472,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'notificacao_titulo'       => 'Edição de ponto sem permissão',
 			'notificacao_mensagem'     => sprintf( 'Você tentou editar o ponto “%s”, mas não tem permissão para editar pontos da rede.', $description ),
 			'notificacao_tipo'         => 'alerta',
-			'notificacao_prioridade'   => 'normal',
+			'notificacao_prioridade'   => 'baixa',
 			'notificacao_destino_tipo' => 'usuario',
 			'notificacao_usuarios_ids' => ',' . $user_id . ',',
 			'notificacao_setores_ids'  => '',
@@ -538,7 +538,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'notificacao_titulo'        => 'Acesso não permitido',
 			'notificacao_mensagem'      => sprintf( 'Você tentou abrir “%s”, mas não tem a permissão necessária. Contate a gerência para solicitar acesso.', $page_label ),
 			'notificacao_tipo'          => 'alerta',
-			'notificacao_prioridade'    => 'normal',
+			'notificacao_prioridade'    => 'baixa',
 			'notificacao_destino_tipo'  => 'usuario',
 			'notificacao_usuarios_ids'  => ',' . $user_id . ',',
 			'notificacao_setores_ids'   => '',

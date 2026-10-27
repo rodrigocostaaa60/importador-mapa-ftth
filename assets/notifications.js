@@ -38,7 +38,21 @@
 	var panel = create('section', 'inmov-ftth-notification-panel');
 	panel.setAttribute('aria-hidden', 'true');
 	var head = create('div', 'inmov-ftth-notification-head');
-	head.appendChild(create('div', 'inmov-ftth-notification-head-copy', 'Notificações'));
+	var headMain = create('div', 'inmov-ftth-notification-head-main');
+	var headIcon = create('span', 'inmov-ftth-notification-head-icon');
+	headIcon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+	var headText = create('div', 'inmov-ftth-notification-head-text');
+	var headTitleRow = create('div', 'inmov-ftth-notification-head-title-row');
+	headTitleRow.appendChild(create('div', 'inmov-ftth-notification-head-copy', 'Notificações'));
+	var panelUnreadPill = create('span', 'inmov-ftth-notification-unread-pill is-empty', '0 não lidas');
+	headTitleRow.appendChild(panelUnreadPill);
+	headText.appendChild(headTitleRow);
+	headText.appendChild(create('div', 'inmov-ftth-notification-head-subtitle', 'Atualizações da rede e da equipe'));
+	headMain.appendChild(headIcon);
+	headMain.appendChild(headText);
+	head.appendChild(headMain);
+	var sheetHandle = create('div', 'inmov-ftth-notification-sheet-handle');
+	sheetHandle.setAttribute('aria-hidden', 'true');
 	var close = create('button', 'inmov-ftth-notification-close', '×');
 	close.type = 'button';
 	close.setAttribute('aria-label', 'Fechar notificações');
@@ -48,6 +62,7 @@
 	var markAll = create('button', 'inmov-ftth-notification-mark-all', 'Marcar todas como lidas');
 	markAll.type = 'button';
 	footer.appendChild(markAll);
+	panel.appendChild(sheetHandle);
 	panel.appendChild(head);
 	panel.appendChild(list);
 	panel.appendChild(footer);
@@ -152,6 +167,8 @@
 		badge.hidden = count < 1;
 		badge.textContent = count > 99 ? '99+' : String(count);
 		trigger.classList.toggle('has-unread', count > 0);
+		panelUnreadPill.textContent = count ? (count > 99 ? '99+ não lidas' : count + ' não lidas') : '0 não lidas';
+		panelUnreadPill.classList.toggle('is-empty', count < 1);
 	}
 
 	function typeLabel(type) {

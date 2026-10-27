@@ -656,3 +656,26 @@
 	.inmov-ftth-notification-mobile-unread { font-size: 11px; }
 	.inmov-ftth-notification-mobile-mark-all { min-height: 28px; padding: 5px 10px !important; font-size: 10px !important; }
 }
+
+/* Mobile browsers expose a changing visual viewport when their address bar
+ * opens/closes.  Pin the sheet between safe top/bottom breathing room instead
+ * of relying on 100vh, which otherwise clips the header or footer on iOS and
+ * Android. */
+@media (max-width: 767px) {
+	.inmov-ftth-notification-panel {
+		bottom: max(10px, env(safe-area-inset-bottom));
+		max-height: min(76dvh, 620px);
+	}
+	.inmov-ftth-notification-panel.is-expanded {
+		top: max(10px, env(safe-area-inset-top));
+		bottom: max(10px, env(safe-area-inset-bottom));
+		height: auto;
+		max-height: none;
+	}
+}
+
+@supports not (height: 1dvh) {
+	@media (max-width: 767px) {
+		.inmov-ftth-notification-panel { max-height: min(76vh, 620px); }
+	}
+}

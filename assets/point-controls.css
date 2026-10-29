@@ -888,3 +888,9 @@ body.inmov-ftth-map-page *{box-sizing:border-box}
    .inmov-ftth-map-shell:has(.inmov-ftth-map-legend:not(.is-hidden)) .inmov-ftth-refresh-notice{top:98px}
   }
 }
+
+/* Mobile stacking contract: the notification bell sits above the search,
+ * menu and location controls, while all map sheets stay above notifications. */
+@media (max-width: 767px) {
+ .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel{z-index:5600!important}
+}

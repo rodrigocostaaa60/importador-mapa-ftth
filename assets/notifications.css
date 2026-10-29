@@ -731,6 +731,8 @@
  * buttons always remain clickable when they are open.  The preview follows
  * the same rule to avoid covering sheet controls while it is visible. */
 @media (max-width: 767px) {
-	.inmov-ftth-notification-root { z-index: 2000; }
-	.inmov-ftth-notification-preview { z-index: 2000; }
+	/* Search, menu and location controls occupy the 2xxx/5xxx layers. Keep
+	 * the bell above those controls, but below every map sheet. */
+	.inmov-ftth-notification-root { z-index: 5200; }
+	.inmov-ftth-notification-preview { z-index: 5200; }
 }

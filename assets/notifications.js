@@ -218,9 +218,14 @@
 	var currentFilter = 'nao-lidas';
 
 	function setOpen(open) {
-		panel.classList.toggle('is-open', !!open);
-		panel.setAttribute('aria-hidden', open ? 'false' : 'true');
-		trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+		var isOpen = !!open;
+		panel.classList.toggle('is-open', isOpen);
+		panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+		trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+		/* On phones the bell keeps its normal layer while closed. Once the
+		 * notification sheet is open, elevate its whole surface above every map
+		 * panel so it can be read without closing the panel underneath it. */
+		root.classList.toggle('is-panel-open', isOpen);
 	}
 
 	function updateBadge(unread) {
@@ -668,9 +673,21 @@
 		currentFilter = 'nao-lidas';
 		refresh();
 	});
+	function isMapBackgroundClick(target) {
+		if (!target || !target.closest) return false;
+		var shell = target.closest('.inmov-ftth-map-shell');
+		if (!shell) return false;
+		return !target.closest('.mapboxgl-marker, .jet-map-marker, .inmov-ftth-point-cluster, .mapboxgl-ctrl, .inmov-ftth-point-search, .inmov-ftth-map-sheet, .inmov-ftth-map-style-panel, .inmov-ftth-map-inventory-panel, .inmov-ftth-map-edit-panel, .inmov-ftth-map-bottom-bar');
+	}
+	/* Capture the outside click before Mapbox receives it. This closes only the
+	 * notification sheet; a background map click must not close the detail,
+	 * inventory or settings surface that was already open. */
 	document.addEventListener('click', function (event) {
-		if (!root.contains(event.target) && !preview.contains(event.target)) setOpen(false);
-	});
+		if (!panel.classList.contains('is-open')) return;
+		if (root.contains(event.target) || preview.contains(event.target)) return;
+		setOpen(false);
+		if (isMapBackgroundClick(event.target) && event.stopPropagation) event.stopPropagation();
+	}, true);
 	refresh();
 	config.announce = function (item) {
 		if (!item) return;

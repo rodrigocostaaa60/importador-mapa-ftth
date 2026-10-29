@@ -735,4 +735,6 @@
 	 * the bell above those controls, but below every map sheet. */
 	.inmov-ftth-notification-root { z-index: 5200; }
 	.inmov-ftth-notification-preview { z-index: 5200; }
+	/* The open notification sheet is intentionally the front-most surface. */
+	.inmov-ftth-notification-root.is-panel-open { z-index: 8000; }
 }

@@ -1566,7 +1566,8 @@
 	function hideMapSearch(map) {
 		var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
 		var host = container && container.parentNode;
-		var results = host && host.querySelector ? host.querySelector('.inmov-ftth-point-search__results') : null;
+		var results = map && map.__inmovFtthSearchResults ? map.__inmovFtthSearchResults : null;
+		if (!results) results = host && host.querySelector ? host.querySelector('.inmov-ftth-point-search__results') : null;
 		if (results) results.innerHTML = '';
 		if (host) host.__inmovFtthSearchResultsOpen = false;
 	}
@@ -2108,7 +2109,14 @@
 		var input = document.createElement('input');
 		input.type = 'search'; input.placeholder = 'Pesquisar CTO, OLT ou código'; input.setAttribute('aria-label', 'Pesquisar pontos da rede');
 		var results = document.createElement('div'); results.className = 'inmov-ftth-point-search__results';
-		wrap.appendChild(input); wrap.appendChild(results); container.parentNode.insertBefore(wrap, container);
+		/* The result list must escape the search bar's stacking context. Keep the
+		 * input in the map shell, but portal only the list to <body>. */
+		if (results.classList && typeof results.classList.add === 'function') results.classList.add('inmov-ftth-point-search__results--portal');
+		wrap.appendChild(input);
+		if (document.body && typeof document.body.appendChild === 'function') document.body.appendChild(results);
+		else wrap.appendChild(results);
+		container.parentNode.insertBefore(wrap, container);
+		map.__inmovFtthSearchResults = results;
 		createMapLegend(container);
 		createMapQuickFilters(container, map, wrap);
 		createMapStylePanel(container, map);
@@ -2247,12 +2255,22 @@
 		var userPosition = null;
 		var searchResultsOpen = false;
 		var mapHost = container.parentNode;
+		function positionSearchResults() {
+			if (!results || !results.classList || !results.classList.contains || !results.classList.contains('inmov-ftth-point-search__results--portal')) return;
+			var rect = wrap.getBoundingClientRect ? wrap.getBoundingClientRect() : null;
+			if (!rect) return;
+			results.style.left = Math.round(rect.left) + 'px';
+			results.style.top = Math.round(rect.bottom + 5) + 'px';
+			results.style.width = Math.round(rect.width) + 'px';
+		}
+		window.addEventListener('resize', positionSearchResults, { passive: true });
+		if (window.visualViewport && window.visualViewport.addEventListener) window.visualViewport.addEventListener('resize', positionSearchResults, { passive: true });
 		function distance(a, b) { var dx = a[0] - b[0], dy = a[1] - b[1]; return Math.sqrt(dx * dx + dy * dy); }
 		function render() {
 			if (mapHost && mapHost.__inmovFtthSearchResultsOpen === false) searchResultsOpen = false;
 			var query = input.value.trim().toLowerCase();
 			results.innerHTML = '';
-			if (!query || !searchResultsOpen) return;
+			if (!query || !searchResultsOpen) { positionSearchResults(); return; }
 			var found = records.filter(function (item) { return JSON.stringify(item).toLowerCase().indexOf(query) !== -1; });
 			found.sort(function (a, b) {
 				if (!userPosition) return 0;
@@ -2278,6 +2296,7 @@
 				});
 				results.appendChild(button);
 			});
+			positionSearchResults();
 		}
 		input.addEventListener('input', function () { searchResultsOpen = !!input.value.trim(); if (mapHost) mapHost.__inmovFtthSearchResultsOpen = searchResultsOpen; render(); });
 		input.addEventListener('focus', function () { resetMapShellScroll(map); if (input.value.trim()) { searchResultsOpen = true; if (mapHost) mapHost.__inmovFtthSearchResultsOpen = true; render(); } });

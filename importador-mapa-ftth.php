@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.72
+ * Version: 0.10.73
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.72';
+	const VERSION               = '0.10.73';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -43,6 +43,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
 		add_action( 'wp_head', array( $this, 'print_map_loading_bootstrap' ), 1 );
 		add_action( 'wp_print_footer_scripts', array( $this, 'order_native_map_scripts' ), 1 );
+		add_shortcode( 'inmov_ftth_points_directory', array( $this, 'render_points_directory' ) );
+		add_shortcode( 'inmov_ftth_routes_directory', array( $this, 'render_routes_directory' ) );
 		add_filter( 'update_plugins_github.com', array( $this, 'filter_github_update' ), 10, 4 );
 		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_update_check_link' ) );
 		add_action( 'admin_post_inmov_ftth_check_update', array( $this, 'handle_update_check' ) );
@@ -1060,6 +1062,59 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}());
 		</script>
 		<?php
+	}
+
+	/** Enqueue the reusable frontend directory used by the FTTH inventory pages. */
+	private function enqueue_directory_assets() {
+		wp_enqueue_style(
+			'inmov-ftth-directory',
+			plugin_dir_url( __FILE__ ) . 'assets/network-directory.css',
+			array(),
+			self::VERSION
+		);
+		wp_enqueue_script(
+			'inmov-ftth-directory',
+			plugin_dir_url( __FILE__ ) . 'assets/network-directory.js',
+			array(),
+			self::VERSION,
+			true
+		);
+		wp_localize_script(
+			'inmov-ftth-directory',
+			'InmovFtthDirectory',
+			array(
+				'pointsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
+				'routesEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes' ) ),
+				'mapUrl'        => esc_url_raw( get_permalink( 3600 ) ),
+				'newPointUrl'   => esc_url_raw( get_permalink( 3658 ) ),
+				'nonce'         => wp_create_nonce( 'wp_rest' ),
+			)
+		);
+	}
+
+	/** Render the point CCT directory; data remains read-only until a form is submitted. */
+	public function render_points_directory() {
+		if ( ! is_user_logged_in() || ! current_user_can( 'read' ) ) {
+			return '<div class="inmov-ftth-directory__notice">Faça login para consultar os pontos da rede.</div>';
+		}
+		$this->enqueue_directory_assets();
+		$type = isset( $_GET['tipo'] ) ? sanitize_key( wp_unslash( $_GET['tipo'] ) ) : '';
+		return '<section class="inmov-ftth-directory" data-directory-kind="points" data-initial-type="' . esc_attr( $type ) . '">' .
+			'<header class="inmov-ftth-directory__header"><div><span class="inmov-ftth-directory__eyebrow">Rede FTTH</span><h1>Inventário da rede</h1><p>Consulte pontos por cidade, tipo e status. Use o mapa para conferir a posição exata.</p></div><a class="inmov-ftth-directory__primary" href="' . esc_url( get_permalink( 3658 ) ) . '">+ Novo ponto</a></header>' .
+			'<div class="inmov-ftth-directory__filters" role="search"><label>Buscar<input type="search" data-directory-search placeholder="Código, nome ou endereço"></label><label>Cidade<select data-directory-city><option value="">Todas as cidades</option></select></label><label>Tipo<select data-directory-type><option value="">Todos os tipos</option></select></label><label>Status<select data-directory-status><option value="">Todos os status</option></select></label></div>' .
+			'<div class="inmov-ftth-directory__summary" data-directory-summary aria-live="polite">Carregando pontos…</div><div class="inmov-ftth-directory__grid" data-directory-list></div><div class="inmov-ftth-directory__empty" data-directory-empty hidden>Nenhum ponto encontrado com esses filtros.</div>' .
+		'</section>';
+	}
+
+	/** Render the route/fiber CCT directory with fiber-count and cable filters. */
+	public function render_routes_directory() {
+		if ( ! is_user_logged_in() || ! current_user_can( 'read' ) ) {
+			return '<div class="inmov-ftth-directory__notice">Faça login para consultar as rotas da rede.</div>';
+		}
+		$this->enqueue_directory_assets();
+		return '<section class="inmov-ftth-directory" data-directory-kind="routes"><header class="inmov-ftth-directory__header"><div><span class="inmov-ftth-directory__eyebrow">Rede FTTH</span><h1>Rotas e fibras</h1><p>Consulte trechos de fibra por cidade, quantidade de FO, tipo de cabo e status.</p></div></header>' .
+			'<div class="inmov-ftth-directory__filters" role="search"><label>Buscar<input type="search" data-directory-search placeholder="Nome ou localidade"></label><label>Cidade<select data-directory-city><option value="">Todas as cidades</option></select></label><label>Fibras<select data-directory-fibers><option value="">Todas</option></select></label><label>Status<select data-directory-status><option value="">Todos os status</option></select></label></div>' .
+			'<div class="inmov-ftth-directory__summary" data-directory-summary aria-live="polite">Carregando rotas…</div><div class="inmov-ftth-directory__grid" data-directory-list></div><div class="inmov-ftth-directory__empty" data-directory-empty hidden>Nenhuma rota encontrada com esses filtros.</div></section>';
 	}
 
 	public function register_menu() {

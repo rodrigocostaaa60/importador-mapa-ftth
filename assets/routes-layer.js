@@ -1523,8 +1523,21 @@
 	function focusRequestedPoint(map) {
 		if (!map || !window.URLSearchParams || !window.location || map.__inmovFtthRequestedPointFocused) return;
 		var requestedId = new window.URLSearchParams(window.location.search || '').get('focus_point');
-		if (!requestedId || !pointRecords[requestedId]) return;
-		var center = markerCoordinates(pointRecords[requestedId]);
+		if (!requestedId) return;
+		var requestedPoint = pointRecords[requestedId];
+		if (!requestedPoint) {
+			Object.keys(pointRecords).some(function (key) {
+				var candidate = pointRecords[key] || {};
+				var candidateCode = String(candidate.code || candidate.ponto_codigo || candidate.codigo || '').trim();
+				if (candidateCode && candidateCode === String(requestedId).trim()) {
+					requestedPoint = candidate;
+					return true;
+				}
+				return false;
+			});
+		}
+		if (!requestedPoint) return;
+		var center = markerCoordinates(requestedPoint);
 		if (!center) return;
 		map.__inmovFtthRequestedPointFocused = true;
 		window.setTimeout(function () {

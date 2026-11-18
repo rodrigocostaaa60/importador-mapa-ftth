@@ -1164,7 +1164,7 @@
 	}
 
 	function canEditPoints() {
-		return config.canEditPoints === true;
+		return config.canEditPoints === true || config.canEditPoints === 1 || config.canEditPoints === '1' || config.canEditPoints === 'true';
 	}
 
 	function recordEditPermissionNotification(point) {

@@ -12,6 +12,10 @@
 		return value === undefined || value === null ? '' : String(value).trim();
 	}
 
+	function canEditPoints() {
+		return config.canEditPoints === true || config.canEditPoints === 1 || config.canEditPoints === '1' || config.canEditPoints === 'true';
+	}
+
 	function cleanField(value, prefix) {
 		var result = text(value);
 		if (prefix) result = result.replace(new RegExp('^' + prefix + '\\s*[·:–-]?\\s*', 'i'), '');
@@ -206,7 +210,7 @@
 				showNotice('Não foi possível identificar o ponto selecionado.');
 				return;
 			}
-			if (config.canEditPoints !== true) {
+			if (!canEditPoints()) {
 				event.preventDefault();
 				event.stopPropagation();
 				showNotice('Seu usuário não tem permissão para editar este ponto.');

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.74
+ * Version: 0.10.75
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.74';
+	const VERSION               = '0.10.75';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -40,6 +40,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		 * missing action for form 3699. */
 		add_action( 'init', array( $this, 'configure_jfb_point_form' ), 20 );
 		add_action( 'jet-form-builder/custom-action/inmov_ftth_update_point', array( $this, 'handle_jfb_point_update' ), 10, 2 );
+		add_action( 'jet-engine/query-builder/query/after-query-setup', array( $this, 'apply_points_directory_url_filters' ), 20 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
 		add_action( 'wp_head', array( $this, 'print_map_loading_bootstrap' ), 1 );
 		add_action( 'wp_print_footer_scripts', array( $this, 'order_native_map_scripts' ), 1 );
@@ -47,6 +48,71 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_update_check_link' ) );
 		add_action( 'admin_post_inmov_ftth_check_update', array( $this, 'handle_update_check' ) );
 		add_action( 'admin_notices', array( $this, 'render_update_check_notice' ) );
+	}
+
+	/**
+	 * Apply the FTTH directory URL filters to its all-points CCT query.
+	 *
+	 * Query 79 intentionally returns every published FTTH point so the page can
+	 * be browsed without a URL parameter. The sidebar and the creation form add
+	 * a query variable, respectively `tipo` and
+	 * `inserted_cct_pontos_rede_ftth`; add the narrowing clause only when one
+	 * of those variables is present.
+	 *
+	 * @param object $query JetEngine Query Builder query instance.
+	 * @return void
+	 */
+	public function apply_points_directory_url_filters( $query ) {
+		if ( ! is_object( $query ) || '79' !== (string) ( $query->id ?? '' ) || empty( $query->final_query ) || ! is_array( $query->final_query ) ) {
+			return;
+		}
+
+		$request = wp_unslash( $_REQUEST );
+		$point_id = absint( $request['inserted_cct_pontos_rede_ftth'] ?? $request['ponto_id'] ?? 0 );
+		$type     = sanitize_key( $request['tipo'] ?? '' );
+
+		if ( ! $point_id && ! $type ) {
+			return;
+		}
+
+		if ( empty( $query->final_query['args'] ) || ! is_array( $query->final_query['args'] ) ) {
+			$query->final_query['args'] = array();
+		}
+
+		/* A newly created item must win over a menu type if both are present. */
+		if ( $point_id ) {
+			$query->final_query['args'][] = array(
+				'field'    => '_ID',
+				'operator' => '=',
+				'value'    => $point_id,
+				'type'     => 'NUMERIC',
+			);
+			return;
+		}
+
+		$point_types = array( 'pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'outro' );
+
+		if ( in_array( $type, $point_types, true ) ) {
+			$query->final_query['args'][] = array(
+				'field'    => 'ponto_tipo',
+				'operator' => '=',
+				'value'    => $type,
+				'type'     => 'CHAR',
+			);
+			return;
+		}
+
+		/* Stores use more than one technical type (e.g. "POP/ LOJA" and
+		 * "LOJA"), so use their display name instead of a non-existent
+		 * `ponto_tipo=loja` value. */
+		if ( 'loja' === $type ) {
+			$query->final_query['args'][] = array(
+				'field'    => 'ponto_nome',
+				'operator' => 'LIKE',
+				'value'    => 'LOJA',
+				'type'     => 'CHAR',
+			);
+		}
 	}
 
 	/** Connect WordPress' native plugin updater to public GitHub Releases. */

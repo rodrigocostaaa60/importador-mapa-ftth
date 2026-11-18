@@ -120,7 +120,7 @@
           "default": "keep",
           "options": [
             { "value": "keep", "label": "Manter posição atual" },
-            { "value": "manual", "label": "Informar coordenadas" },
+            { "value": "coordinates", "label": "Informar coordenadas" },
             { "value": "map", "label": "Selecionar no mapa" }
           ],
           "persist": false
@@ -136,7 +136,7 @@
             "type": "show",
             "field": "inmov_location_mode",
             "operator": "in_list",
-            "compareValue": ["manual", "map"]
+            "compareValue": ["coordinates", "map"]
           },
           "map": "ponto_latitude",
           "locationBridge": "latitude"
@@ -152,7 +152,7 @@
             "type": "show",
             "field": "inmov_location_mode",
             "operator": "in_list",
-            "compareValue": ["manual", "map"]
+            "compareValue": ["coordinates", "map"]
           },
           "map": "ponto_longitude",
           "locationBridge": "longitude"

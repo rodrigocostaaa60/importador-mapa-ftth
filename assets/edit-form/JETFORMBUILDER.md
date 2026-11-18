@@ -42,8 +42,9 @@ Mapeie diretamente para `pontos_rede_ftth`:
 ### Condições do ponto
 
 - Mostrar `ponto_capacidade_portas` quando `ponto_tipo` estiver em `cto`, `olt`, `pop` ou `caixa_emenda`.
-- `inmov_location_mode` é um campo auxiliar, não persistido: `keep`, `manual` ou `map`.
-- Mostrar latitude e longitude quando o modo for `manual` ou `map`.
+- `inmov_location_mode` é um campo auxiliar, não persistido: `keep`, `coordinates` ou `map`.
+- Ao abrir pelo mapa/listing, a integração seleciona `map`, mostra a posição atual e preenche latitude/longitude; o usuário pode manter a posição ou escolher outra.
+- Mostrar latitude e longitude quando o modo for `coordinates` ou `map`.
 - No modo `map`, o botão auxiliar dispara o hook `inmov-ftth:edit-location-request`; a integração futura preencherá os campos e validará os limites.
 - `inmov_change_reason` e `inmov_reviewed` são campos de revisão e não entram no CCT.
 

@@ -991,6 +991,53 @@
 		});
 	}
 
+	function validEditCoordinates(payload) {
+		var lat = Number(payload && payload.lat);
+		var lng = Number(payload && payload.lng);
+		return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180 ? { lat: lat, lng: lng } : null;
+	}
+
+	function applyEditMapDefaults(form, payload) {
+		var coordinates = validEditCoordinates(payload);
+		if (!form || !coordinates) return false;
+		setEditFieldValue(form, 'ponto_latitude', coordinates.lat);
+		setEditFieldValue(form, 'ponto_longitude', coordinates.lng);
+		setEditFieldValue(form, 'ponto_localizacao', coordinates.lat + ',' + coordinates.lng);
+		var mapField = form.querySelector && form.querySelector('.jet-fb-map-field');
+		if (!mapField) return false;
+		var valueField = mapField.querySelector('input[name="ponto_localizacao"], input:not([data-map-field])');
+		var hashField = mapField.querySelector('[data-map-field="hash"]');
+		var latField = mapField.querySelector('[data-map-field="lat"]');
+		var lngField = mapField.querySelector('[data-map-field="lng"]');
+		var value = coordinates.lat + ',' + coordinates.lng;
+		if (valueField) {
+			valueField.value = value;
+			try { valueField.dispatchEvent(new Event('input', { bubbles: true })); } catch (error) {}
+			try { valueField.dispatchEvent(new Event('change', { bubbles: true })); } catch (error2) {}
+		}
+		if (latField) latField.value = String(coordinates.lat);
+		if (lngField) lngField.value = String(coordinates.lng);
+		if (hashField && !hashField.value) hashField.value = value;
+		var preview = mapField.querySelector('.jet-fb-map-field__position');
+		if (preview) preview.textContent = coordinates.lat + ', ' + coordinates.lng;
+		return !!valueField;
+	}
+
+	function bindEditLocationDefaults(form, payload) {
+		if (!form || form.__inmovFtthLocationDefaultsBound) return;
+		form.__inmovFtthLocationDefaultsBound = true;
+		form.__inmovFtthPoint = payload;
+		var update = function () { applyEditMapDefaults(form, form.__inmovFtthPoint); };
+		form.addEventListener('change', function (event) {
+			if (event.target && event.target.name === 'inmov_location_mode') window.setTimeout(update, 0);
+		});
+		if (typeof MutationObserver === 'function') {
+			form.__inmovFtthLocationObserver = new MutationObserver(update);
+			form.__inmovFtthLocationObserver.observe(form, { childList: true, subtree: true });
+		}
+		update();
+	}
+
 	function editPointPayload(point) {
 		point = point || {};
 		return {
@@ -1029,9 +1076,11 @@
 		setEditFieldValue(form, 'ponto_localizacao_lat', payload.lat);
 		setEditFieldValue(form, 'ponto_localizacao_lng', payload.lng);
 		setEditFieldValue(form, 'ponto_localizacao', payload.lat !== undefined && payload.lng !== undefined ? String(payload.lat) + ',' + String(payload.lng) : '');
-		setEditFieldValue(form, 'inmov_location_mode', 'keep');
+		setEditFieldValue(form, 'inmov_location_mode', 'map');
 		setEditFieldValue(form, 'inmov_change_reason', '');
 		setEditFieldValue(form, 'inmov_reviewed', '');
+		bindEditLocationDefaults(form, payload);
+		applyEditMapDefaults(form, payload);
 		form.setAttribute('data-inmov-ftth-item-id', payload.id);
 		form.setAttribute('data-inmov-ftth-prefilled', token);
 		return true;

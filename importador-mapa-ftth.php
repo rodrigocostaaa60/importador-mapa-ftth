@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.76
+ * Version: 0.10.77
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.76';
+	const VERSION               = '0.10.77';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -42,6 +42,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'jet-form-builder/custom-action/inmov_ftth_update_point', array( $this, 'handle_jfb_point_update' ), 10, 2 );
 		add_action( 'jet-engine/query-builder/query/after-query-setup', array( $this, 'apply_points_directory_url_filters' ), 20 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
+		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_directory_cards' ) );
 		add_action( 'wp_head', array( $this, 'print_map_loading_bootstrap' ), 1 );
 		add_action( 'wp_print_footer_scripts', array( $this, 'order_native_map_scripts' ), 1 );
 		add_filter( 'update_plugins_github.com', array( $this, 'filter_github_update' ), 10, 4 );
@@ -65,6 +66,16 @@ final class Inmov_JetEngine_FTTH_Importer {
 	public function apply_points_directory_url_filters( $query ) {
 		if ( ! is_object( $query ) || '79' !== (string) ( $query->id ?? '' ) || empty( $query->final_query ) || ! is_array( $query->final_query ) ) {
 			return;
+		}
+
+		/* Query 79 is shared by the FTTH map and the two directory pages. Keep
+		 * the single query, but give the map its complete dataset while the
+		 * directories use the Listing Grid's paginated 24-item batches. */
+		$context = $this->get_ftth_query_context();
+		if ( 'map' === $context ) {
+			$query->final_query['number'] = 1000;
+		} elseif ( 'directory' === $context ) {
+			$query->final_query['number'] = 24;
 		}
 
 		$request = wp_unslash( $_REQUEST );
@@ -113,6 +124,46 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'type'     => 'CHAR',
 			);
 		}
+	}
+
+	/** Return the frontend context for the shared FTTH points query. */
+	private function get_ftth_query_context() {
+		$map_ids       = array( '3600' );
+		$directory_ids = array( '3714', '3759' );
+
+		if ( is_page( 3600 ) || is_page( 'mapa-da-rede-ftth' ) ) {
+			return 'map';
+		}
+		if ( is_page( 3714 ) || is_page( 'inventario-da-rede-ftth' ) || is_page( 3759 ) || is_page( 'pontos-da-rede' ) ) {
+			return 'directory';
+		}
+
+		$request = wp_unslash( $_REQUEST );
+		foreach ( array( 'post_id', 'queried_id', 'provider', 'listing_id' ) as $key ) {
+			$value = (string) ( $request[ $key ] ?? '' );
+			if ( '' === $value ) {
+				continue;
+			}
+			if ( preg_match( '/(?:^|[^0-9])3600(?:[^0-9]|$)/', $value ) || in_array( $value, $map_ids, true ) ) {
+				return 'map';
+			}
+			if ( preg_match( '/(?:^|[^0-9])(?:3714|3759)(?:[^0-9]|$)/', $value ) || in_array( $value, $directory_ids, true ) ) {
+				return 'directory';
+			}
+		}
+
+		$referer = wp_get_referer();
+		if ( $referer ) {
+			$path = (string) wp_parse_url( $referer, PHP_URL_PATH );
+			if ( false !== strpos( $path, '/mapa-da-rede-ftth' ) ) {
+				return 'map';
+			}
+			if ( false !== strpos( $path, '/inventario-da-rede-ftth' ) || false !== strpos( $path, '/pontos-da-rede' ) ) {
+				return 'directory';
+			}
+		}
+
+		return '';
 	}
 
 	/** Connect WordPress' native plugin updater to public GitHub Releases. */
@@ -1010,6 +1061,27 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'canEditPoints' => is_user_logged_in() && current_user_can( 'edit_posts' ),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
+		);
+	}
+
+	/** Add the shared point-type visual treatment to the native directory cards. */
+	public function enqueue_directory_cards() {
+		if ( ! is_page( 3714 ) && ! is_page( 'inventario-da-rede-ftth' ) && ! is_page( 3759 ) && ! is_page( 'pontos-da-rede' ) ) {
+			return;
+		}
+
+		wp_enqueue_style(
+			'inmov-ftth-directory-cards',
+			plugin_dir_url( __FILE__ ) . 'assets/directory-cards.css',
+			array(),
+			self::VERSION
+		);
+		wp_enqueue_script(
+			'inmov-ftth-directory-cards',
+			plugin_dir_url( __FILE__ ) . 'assets/directory-cards.js',
+			array(),
+			self::VERSION,
+			true
 		);
 	}
 

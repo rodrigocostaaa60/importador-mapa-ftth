@@ -1,0 +1,30 @@
+.jet-listing-grid .inmov-ftth-listing-type .jet-listing-dynamic-field__content {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 28px;
+	padding: 5px 10px;
+	border: 1px solid var(--inmov-point-color, #475569);
+	border-radius: 999px;
+	background: var(--inmov-point-soft, #f1f5f9);
+	color: var(--inmov-point-color, #475569);
+	font-size: 11px;
+	font-weight: 800;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.jet-listing-grid .inmov-ftth-listing-type .jet-listing-dynamic-field__content::before {
+	content: attr(data-glyph);
+	display: inline-grid;
+	place-items: center;
+	width: 16px;
+	height: 16px;
+	font-size: 14px;
+	font-weight: 900;
+	line-height: 1;
+}
+
+.jet-listing-grid .inmov-ftth-type--poste .jet-listing-dynamic-field__content::before {
+	font-size: 18px;
+}

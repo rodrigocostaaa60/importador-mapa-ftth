@@ -43,8 +43,8 @@ Mapeie diretamente para `pontos_rede_ftth`:
 
 - Mostrar `ponto_capacidade_portas` quando `ponto_tipo` estiver em `cto`, `olt`, `pop` ou `caixa_emenda`.
 - `inmov_location_mode` é um campo auxiliar, não persistido: `keep`, `coordinates` ou `map`.
-- Ao abrir pelo mapa/listing, a integração seleciona `map`, mostra a posição atual e preenche latitude/longitude; o usuário pode manter a posição ou escolher outra.
-- Mostrar latitude e longitude quando o modo for `coordinates` ou `map`.
+- Ao abrir pelo mapa/listing, a integração mantém `keep` selecionado, mostra a posição atual e preenche latitude/longitude; o usuário só muda o modo quando quiser trocar a posição.
+- Mostrar latitude e longitude quando o modo for `keep`, `coordinates` ou `map`, para que a posição atual fique sempre conferível.
 - No modo `map`, o botão auxiliar dispara o hook `inmov-ftth:edit-location-request`; a integração futura preencherá os campos e validará os limites.
 - `inmov_change_reason` e `inmov_reviewed` são campos de revisão e não entram no CCT.
 
@@ -93,7 +93,7 @@ Quando o formulário é enviado, o callback do plugin:
 
 - lê o campo oculto `_inmov_item_id`;
 - valida a permissão administrativa `manage_options` e os campos do ponto;
-- normaliza os aliases usados pela interface (`loja`/`outro`, `ativo`/`nativo`);
+- normaliza os aliases usados pela interface (`loja`/`outro` e `em_manutencao`/`manutencao`) e preserva o status `ativo` quando ele é selecionado;
 - atualiza diretamente o item do CCT `pontos_rede_ftth` pelo handler do JetEngine;
 - relê a linha gravada e só confirma sucesso quando os valores persistiram.
 

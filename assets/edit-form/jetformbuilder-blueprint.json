@@ -78,6 +78,7 @@
           "label": "Situação",
           "required": true,
           "options": [
+            { "value": "ativo", "label": "Ativo" },
             { "value": "nativo", "label": "Nativo" },
             { "value": "planejado", "label": "Planejado" },
             { "value": "em_implantacao", "label": "Em implantação" },
@@ -136,7 +137,7 @@
             "type": "show",
             "field": "inmov_location_mode",
             "operator": "in_list",
-            "compareValue": ["coordinates", "map"]
+            "compareValue": ["keep", "coordinates", "map"]
           },
           "map": "ponto_latitude",
           "locationBridge": "latitude"
@@ -152,7 +153,7 @@
             "type": "show",
             "field": "inmov_location_mode",
             "operator": "in_list",
-            "compareValue": ["coordinates", "map"]
+            "compareValue": ["keep", "coordinates", "map"]
           },
           "map": "ponto_longitude",
           "locationBridge": "longitude"

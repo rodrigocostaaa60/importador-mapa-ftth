@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.84
+ * Version: 0.10.85
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.84';
+	const VERSION               = '0.10.85';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -307,6 +307,15 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'methods' => WP_REST_Server::READABLE,
 			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
 			'callback' => array( $this, 'get_points' ),
+		) );
+		register_rest_route( 'inmov-ftth/v1', '/location/reverse', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'args'                => array(
+				'lat' => array( 'required' => true, 'validate_callback' => function( $value ) { return is_numeric( $value ) && (float) $value >= -90 && (float) $value <= 90; } ),
+				'lng' => array( 'required' => true, 'validate_callback' => function( $value ) { return is_numeric( $value ) && (float) $value >= -180 && (float) $value <= 180; } ),
+			),
+			'callback'            => array( $this, 'reverse_geocode_location' ),
 		) );
 		register_rest_route( 'inmov-ftth/v1', '/points/(?P<id>\\d+)', array(
 			'methods' => WP_REST_Server::EDITABLE,
@@ -841,10 +850,10 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$type_aliases   = array( 'loja' => 'outro' );
 		$type           = $type_aliases[ $requested_type ] ?? $requested_type;
 		$requested_status = sanitize_key( $params['ponto_status'] );
-		$status_aliases   = array( 'ativo' => 'nativo', 'em_manutencao' => 'manutencao' );
+		$status_aliases   = array( 'em_manutencao' => 'manutencao' );
 		$status           = $status_aliases[ $requested_status ] ?? $requested_status;
 		$allowed_types    = array( 'pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'outro' );
-		$allowed_statuses = array( 'nativo', 'planejado', 'em_implantacao', 'manutencao', 'inativo' );
+		$allowed_statuses = array( 'ativo', 'nativo', 'planejado', 'em_implantacao', 'manutencao', 'inativo' );
 		if ( ! in_array( $type, $allowed_types, true ) || ! in_array( $status, $allowed_statuses, true ) ) {
 			return new WP_Error( 'inmov_ftth_invalid_option', 'Tipo ou situação inválida.', array( 'status' => 400 ) );
 		}
@@ -918,6 +927,76 @@ final class Inmov_JetEngine_FTTH_Importer {
 			}
 		}
 		return rest_ensure_response( array( 'updated' => true, 'point' => $updated ) );
+	}
+
+	/**
+	 * Resolve a selected map coordinate to a user-facing locality/address.
+	 *
+	 * The edit form stays responsive because the reverse lookup is performed
+	 * only after the user changes the marker. Nominatim is used server-side so
+	 * browser CORS rules and provider credentials do not leak into the form.
+	 */
+	public function reverse_geocode_location( WP_REST_Request $request ) {
+		$lat = (float) $request->get_param( 'lat' );
+		$lng = (float) $request->get_param( 'lng' );
+		if ( ! is_finite( $lat ) || ! is_finite( $lng ) || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 ) {
+			return new WP_Error( 'inmov_ftth_invalid_coordinates', 'Coordenadas inválidas.', array( 'status' => 400 ) );
+		}
+
+		$url = add_query_arg(
+			array(
+				'format'         => 'jsonv2',
+				'lat'            => number_format( $lat, 7, '.', '' ),
+				'lon'            => number_format( $lng, 7, '.', '' ),
+				'zoom'           => 18,
+				'addressdetails' => 1,
+				'accept-language'=> 'pt-BR',
+			),
+			'https://nominatim.openstreetmap.org/reverse'
+		);
+		$response = wp_remote_get( $url, array(
+			'timeout' => 8,
+			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.85 (WordPress reverse geocoder)' ),
+		) );
+		if ( is_wp_error( $response ) ) {
+			return rest_ensure_response( array( 'found' => false, 'locality' => '', 'address' => '' ) );
+		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( $code < 200 || $code >= 300 || ! is_array( $body ) ) {
+			return rest_ensure_response( array( 'found' => false, 'locality' => '', 'address' => '' ) );
+		}
+
+		$address_data = is_array( $body['address'] ?? null ) ? $body['address'] : array();
+		$city = sanitize_text_field( $address_data['city'] ?? $address_data['town'] ?? $address_data['village'] ?? $address_data['municipality'] ?? $address_data['county'] ?? '' );
+		$state = sanitize_text_field( $address_data['state_code'] ?? '' );
+		if ( '' === $state && ! empty( $address_data['ISO3166-2-lvl4'] ) ) {
+			$state = preg_replace( '/^BR-/i', '', (string) $address_data['ISO3166-2-lvl4'] );
+		}
+		if ( '' === $state && ! empty( $address_data['state'] ) ) {
+			$state_names = array( 'bahia' => 'BA', 'ceará' => 'CE', 'ceara' => 'CE', 'pernambuco' => 'PE', 'minas gerais' => 'MG', 'são paulo' => 'SP', 'sao paulo' => 'SP', 'rio de janeiro' => 'RJ', 'espírito santo' => 'ES', 'espirito santo' => 'ES', 'paraná' => 'PR', 'parana' => 'PR' );
+			$state = $state_names[ strtolower( remove_accents( (string) $address_data['state'] ) ) ] ?? sanitize_text_field( $address_data['state'] );
+		}
+		$state = strtoupper( trim( $state ) );
+		$locality = trim( $city . ( $city && $state ? ' - ' : '' ) . $state );
+
+		$street = sanitize_text_field( $address_data['road'] ?? $address_data['pedestrian'] ?? $address_data['footway'] ?? '' );
+		$house_number = sanitize_text_field( $address_data['house_number'] ?? '' );
+		$neighborhood = sanitize_text_field( $address_data['neighbourhood'] ?? $address_data['suburb'] ?? $address_data['quarter'] ?? '' );
+		$address_parts = array_filter( array( trim( $street . ( $street && $house_number ? ', ' : '' ) . $house_number ), $neighborhood ) );
+		$address = implode( ' — ', $address_parts );
+		if ( '' === $address ) {
+			$address = sanitize_text_field( $body['display_name'] ?? '' );
+		}
+
+		return rest_ensure_response( array(
+			'found'       => (bool) ( $locality || $address ),
+			'locality'    => $locality,
+			'address'     => $address,
+			'display_name'=> sanitize_text_field( $body['display_name'] ?? '' ),
+			'lat'         => $lat,
+			'lng'         => $lng,
+		) );
 	}
 
 	public function get_points() {
@@ -1067,6 +1146,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			array(
 				'endpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes' ) ),
 				'pointsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
+				'reverseGeocodeEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/location/reverse' ) ),
 				'pointUpdateEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/points/' ) ),
 				'permissionNotificationEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/permission-denied' ) ),
 				'editPopupSelector' => '.e_pdrf',
@@ -1113,6 +1193,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'editPopupId'                     => 3701,
 				'editFormId'                     => 3699,
 				'pointsEndpoint'                 => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
+				'reverseGeocodeEndpoint'          => esc_url_raw( rest_url( 'inmov-ftth/v1/location/reverse' ) ),
 				'permissionNotificationEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/permission-denied' ) ),
 				'nonce'                          => wp_create_nonce( 'wp_rest' ),
 				'canEditPoints'                  => $this->can_edit_points(),

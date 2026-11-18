@@ -15,6 +15,7 @@
     ];
 
     var POINT_STATUSES = [
+        { value: 'ativo', label: 'Ativo' },
         { value: 'nativo', label: 'Nativo' },
         { value: 'planejado', label: 'Planejado' },
         { value: 'em_implantacao', label: 'Em implantação' },

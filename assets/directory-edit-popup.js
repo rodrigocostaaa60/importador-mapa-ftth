@@ -76,7 +76,6 @@
 			observation: field(card, '.elementor-element-25660286 .jet-listing-dynamic-field__content', 'Observação')
 		};
 		point.status = point.status.toLowerCase().replace(/[\s-]+/g, '_');
-		if (point.status === 'ativo') point.status = 'nativo';
 		return point;
 	}
 
@@ -131,19 +130,77 @@
 		return !!valueField;
 	}
 
+	function readMapCoordinates(form) {
+		if (!form || !form.querySelector) return null;
+		var mapField = form.querySelector('.jet-fb-map-field');
+		var valueField = mapField && mapField.querySelector('input[name="ponto_localizacao"], input:not([data-map-field])');
+		var raw = valueField ? text(valueField.value) : text((form.querySelector('[name="ponto_localizacao"]') || {}).value);
+		var parts = raw.split(',').map(function (item) { return Number(String(item).trim()); });
+		if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) return { lat: parts[0], lng: parts[1] };
+		var lat = Number((mapField && mapField.querySelector('[data-map-field="lat"]') || form.querySelector('[name="ponto_latitude"]') || {}).value);
+		var lng = Number((mapField && mapField.querySelector('[data-map-field="lng"]') || form.querySelector('[name="ponto_longitude"]') || {}).value);
+		return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? { lat: lat, lng: lng } : null;
+	}
+
+	function reverseGeocode(form, coordinates) {
+		if (!form || !coordinates || !config.reverseGeocodeEndpoint || typeof window.fetch !== 'function') return;
+		var requestId = (form.__inmovFtthReverseRequestId || 0) + 1;
+		form.__inmovFtthReverseRequestId = requestId;
+		var url = config.reverseGeocodeEndpoint + '?lat=' + encodeURIComponent(coordinates.lat) + '&lng=' + encodeURIComponent(coordinates.lng);
+		window.fetch(url, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
+			.then(function (response) { return response.ok ? response.json() : null; })
+			.then(function (data) {
+				if (!data || requestId !== form.__inmovFtthReverseRequestId) return;
+				if (data.locality) setField(form, 'ponto_localidade', data.locality);
+				if (data.address) setField(form, 'ponto_endereco', data.address);
+			})
+			.catch(function () {});
+	}
+
+	function syncMapLocation(form) {
+		if (!form || !form.__inmovFtthPoint) return;
+		var coordinates = readMapCoordinates(form);
+		if (!coordinates) return;
+		var last = form.__inmovFtthLastCoordinates;
+		if (last && Math.abs(last.lat - coordinates.lat) < 0.0000001 && Math.abs(last.lng - coordinates.lng) < 0.0000001) return;
+		form.__inmovFtthLastCoordinates = coordinates;
+		var original = validCoordinates(form.__inmovFtthPoint);
+		if (original && Math.abs(original.lat - coordinates.lat) < 0.0000001 && Math.abs(original.lng - coordinates.lng) < 0.0000001) return;
+		setField(form, 'ponto_latitude', coordinates.lat);
+		setField(form, 'ponto_longitude', coordinates.lng);
+		setField(form, 'ponto_localizacao', coordinates.lat + ',' + coordinates.lng);
+		setField(form, 'inmov_location_mode', 'map');
+		reverseGeocode(form, coordinates);
+	}
+
 	function bindLocationDefaults(form, point) {
 		if (!form || form.__inmovFtthLocationDefaultsBound) return;
 		form.__inmovFtthLocationDefaultsBound = true;
 		form.__inmovFtthPoint = point;
-		var update = function () { applyMapDefaults(form, form.__inmovFtthPoint); };
+		form.__inmovFtthLastCoordinates = validCoordinates(point);
+		var update = function () {
+			if (!form.__inmovFtthLocationSeeded && applyMapDefaults(form, form.__inmovFtthPoint)) {
+				form.__inmovFtthLocationSeeded = true;
+				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
+				if (form.__inmovFtthLocationObserver) form.__inmovFtthLocationObserver.disconnect();
+			}
+		};
 		form.addEventListener('change', function (event) {
-			if (event.target && event.target.name === 'inmov_location_mode') window.setTimeout(update, 0);
+			if (!event.target || event.target.name !== 'inmov_location_mode') return;
+			if (event.target.value === 'keep') {
+				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
+				applyMapDefaults(form, form.__inmovFtthPoint);
+			} else {
+				window.setTimeout(syncMapLocation, 0, form);
+			}
 		});
 		if (typeof MutationObserver === 'function') {
 			form.__inmovFtthLocationObserver = new MutationObserver(update);
 			form.__inmovFtthLocationObserver.observe(form, { childList: true, subtree: true });
 		}
 		update();
+		if (form.__inmovFtthLocationWatch) window.clearInterval(form.__inmovFtthLocationWatch);
+		form.__inmovFtthLocationWatch = window.setInterval(function () { syncMapLocation(form); }, 180);
 	}
 
 	function prefillForm(form, point) {
@@ -164,7 +221,7 @@
 		/* Open the location section on the current point. The user can still
 		 * leave it unchanged, but the coordinate fields and the JetFormBuilder
 		 * map start with the existing position instead of the provider default. */
-		setField(form, 'inmov_location_mode', 'map');
+		setField(form, 'inmov_location_mode', 'keep');
 		setField(form, 'inmov_change_reason', '');
 		setField(form, 'inmov_reviewed', '');
 		bindLocationDefaults(form, point);

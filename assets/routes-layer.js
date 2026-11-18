@@ -1023,19 +1023,77 @@
 		return !!valueField;
 	}
 
+	function readEditMapCoordinates(form) {
+		if (!form || !form.querySelector) return null;
+		var mapField = form.querySelector('.jet-fb-map-field');
+		var valueField = mapField && mapField.querySelector('input[name="ponto_localizacao"], input:not([data-map-field])');
+		var raw = valueField ? String(valueField.value || '').trim() : String((form.querySelector('[name="ponto_localizacao"]') || {}).value || '').trim();
+		var parts = raw.split(',').map(function (item) { return Number(String(item).trim()); });
+		if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) return { lat: parts[0], lng: parts[1] };
+		var lat = Number((mapField && mapField.querySelector('[data-map-field="lat"]') || form.querySelector('[name="ponto_latitude"]') || {}).value);
+		var lng = Number((mapField && mapField.querySelector('[data-map-field="lng"]') || form.querySelector('[name="ponto_longitude"]') || {}).value);
+		return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? { lat: lat, lng: lng } : null;
+	}
+
+	function reverseEditLocation(form, coordinates) {
+		if (!form || !coordinates || !config.reverseGeocodeEndpoint || typeof window.fetch !== 'function') return;
+		var requestId = (form.__inmovFtthReverseRequestId || 0) + 1;
+		form.__inmovFtthReverseRequestId = requestId;
+		var url = config.reverseGeocodeEndpoint + '?lat=' + encodeURIComponent(coordinates.lat) + '&lng=' + encodeURIComponent(coordinates.lng);
+		window.fetch(url, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
+			.then(function (response) { return response.ok ? response.json() : null; })
+			.then(function (data) {
+				if (!data || requestId !== form.__inmovFtthReverseRequestId) return;
+				if (data.locality) setEditFieldValue(form, 'ponto_localidade', data.locality);
+				if (data.address) setEditFieldValue(form, 'ponto_endereco', data.address);
+			})
+			.catch(function () {});
+	}
+
+	function syncEditMapLocation(form) {
+		if (!form || !form.__inmovFtthPoint) return;
+		var coordinates = readEditMapCoordinates(form);
+		if (!coordinates) return;
+		var last = form.__inmovFtthLastCoordinates;
+		if (last && Math.abs(last.lat - coordinates.lat) < 0.0000001 && Math.abs(last.lng - coordinates.lng) < 0.0000001) return;
+		form.__inmovFtthLastCoordinates = coordinates;
+		var original = validEditCoordinates(form.__inmovFtthPoint);
+		if (original && Math.abs(original.lat - coordinates.lat) < 0.0000001 && Math.abs(original.lng - coordinates.lng) < 0.0000001) return;
+		setEditFieldValue(form, 'ponto_latitude', coordinates.lat);
+		setEditFieldValue(form, 'ponto_longitude', coordinates.lng);
+		setEditFieldValue(form, 'ponto_localizacao', coordinates.lat + ',' + coordinates.lng);
+		setEditFieldValue(form, 'inmov_location_mode', 'map');
+		reverseEditLocation(form, coordinates);
+	}
+
 	function bindEditLocationDefaults(form, payload) {
 		if (!form || form.__inmovFtthLocationDefaultsBound) return;
 		form.__inmovFtthLocationDefaultsBound = true;
 		form.__inmovFtthPoint = payload;
-		var update = function () { applyEditMapDefaults(form, form.__inmovFtthPoint); };
+		form.__inmovFtthLastCoordinates = validEditCoordinates(payload);
+		var update = function () {
+			if (!form.__inmovFtthLocationSeeded && applyEditMapDefaults(form, form.__inmovFtthPoint)) {
+				form.__inmovFtthLocationSeeded = true;
+				form.__inmovFtthLastCoordinates = validEditCoordinates(form.__inmovFtthPoint);
+				if (form.__inmovFtthLocationObserver) form.__inmovFtthLocationObserver.disconnect();
+			}
+		};
 		form.addEventListener('change', function (event) {
-			if (event.target && event.target.name === 'inmov_location_mode') window.setTimeout(update, 0);
+			if (!event.target || event.target.name !== 'inmov_location_mode') return;
+			if (event.target.value === 'keep') {
+				form.__inmovFtthLastCoordinates = validEditCoordinates(form.__inmovFtthPoint);
+				applyEditMapDefaults(form, form.__inmovFtthPoint);
+			} else {
+				window.setTimeout(syncEditMapLocation, 0, form);
+			}
 		});
 		if (typeof MutationObserver === 'function') {
 			form.__inmovFtthLocationObserver = new MutationObserver(update);
 			form.__inmovFtthLocationObserver.observe(form, { childList: true, subtree: true });
 		}
 		update();
+		if (form.__inmovFtthLocationWatch) window.clearInterval(form.__inmovFtthLocationWatch);
+		form.__inmovFtthLocationWatch = window.setInterval(function () { syncEditMapLocation(form); }, 180);
 	}
 
 	function editPointPayload(point) {
@@ -1076,7 +1134,7 @@
 		setEditFieldValue(form, 'ponto_localizacao_lat', payload.lat);
 		setEditFieldValue(form, 'ponto_localizacao_lng', payload.lng);
 		setEditFieldValue(form, 'ponto_localizacao', payload.lat !== undefined && payload.lng !== undefined ? String(payload.lat) + ',' + String(payload.lng) : '');
-		setEditFieldValue(form, 'inmov_location_mode', 'map');
+		setEditFieldValue(form, 'inmov_location_mode', 'keep');
 		setEditFieldValue(form, 'inmov_change_reason', '');
 		setEditFieldValue(form, 'inmov_reviewed', '');
 		bindEditLocationDefaults(form, payload);
@@ -1285,6 +1343,23 @@
 		if (map) map.__inmovFtthEditSelecting = selected === 'map';
 	}
 
+	function reverseNativeEditLocation(panel, coordinates) {
+		if (!panel || !coordinates || !config.reverseGeocodeEndpoint || typeof window.fetch !== 'function') return;
+		var requestId = (panel.__inmovFtthReverseRequestId || 0) + 1;
+		panel.__inmovFtthReverseRequestId = requestId;
+		var url = config.reverseGeocodeEndpoint + '?lat=' + encodeURIComponent(coordinates.lat) + '&lng=' + encodeURIComponent(coordinates.lng);
+		window.fetch(url, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
+			.then(function (response) { return response.ok ? response.json() : null; })
+			.then(function (data) {
+				if (!data || requestId !== panel.__inmovFtthReverseRequestId) return;
+				var locality = nativeEditValue(panel, 'ponto_localidade');
+				var address = nativeEditValue(panel, 'ponto_endereco');
+				if (data.locality && locality) { locality.value = data.locality; dispatchEditFieldEvents(locality); }
+				if (data.address && address) { address.value = data.address; dispatchEditFieldEvents(address); }
+			})
+			.catch(function () {});
+	}
+
 	function createNativeEditPanel(container, map) {
 		var host = mapShellFor(container);
 		if (!host || !host.appendChild || !document.createElement) return null;
@@ -1335,11 +1410,13 @@
 				if (!map.__inmovFtthEditSelecting || !panel.classList.contains('is-open') || !event || !event.lngLat) return;
 				var lat = nativeEditValue(panel, 'ponto_latitude');
 				var lng = nativeEditValue(panel, 'ponto_longitude');
-				if (lat) lat.value = Number(event.lngLat.lat).toFixed(6);
-				if (lng) lng.value = Number(event.lngLat.lng).toFixed(6);
+				var coordinates = { lat: Number(event.lngLat.lat), lng: Number(event.lngLat.lng) };
+				if (lat) { lat.value = coordinates.lat.toFixed(6); dispatchEditFieldEvents(lat); }
+				if (lng) { lng.value = coordinates.lng.toFixed(6); dispatchEditFieldEvents(lng); }
 				var mode = nativeEditValue(panel, 'inmov_location_mode');
 				if (mode) mode.value = 'coordinates';
 				updateNativeEditLocationMode(panel, map);
+				reverseNativeEditLocation(panel, coordinates);
 				var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice');
 				if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-info'; notice.textContent = 'Nova posição selecionada. Salve para confirmar.'; }
 			});

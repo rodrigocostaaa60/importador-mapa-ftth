@@ -42,12 +42,21 @@
 
 	function boot() {
 		decorate(document);
-		document.querySelectorAll('.jet-listing-grid').forEach(function (grid) {
-			if (grid.__inmovDirectoryCardsObserver) return;
+		var observeGrid = function (grid) {
+			if (!grid || grid.__inmovDirectoryCardsObserver) return;
 			var observer = new MutationObserver(function () { decorate(grid); });
 			observer.observe(grid, { childList: true, subtree: true });
 			grid.__inmovDirectoryCardsObserver = observer;
-		});
+		};
+		document.querySelectorAll('.jet-listing-grid').forEach(observeGrid);
+		if (document.body && !document.body.__inmovDirectoryCardsRootObserver) {
+			var rootObserver = new MutationObserver(function () {
+				decorate(document);
+				document.querySelectorAll('.jet-listing-grid').forEach(observeGrid);
+			});
+			rootObserver.observe(document.body, { childList: true, subtree: true });
+			document.body.__inmovDirectoryCardsRootObserver = rootObserver;
+		}
 	}
 
 	if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

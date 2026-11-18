@@ -182,7 +182,6 @@
 			if (!form.__inmovFtthLocationSeeded && applyMapDefaults(form, form.__inmovFtthPoint)) {
 				form.__inmovFtthLocationSeeded = true;
 				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
-				if (form.__inmovFtthLocationObserver) form.__inmovFtthLocationObserver.disconnect();
 			}
 		};
 		form.addEventListener('change', function (event) {
@@ -200,7 +199,10 @@
 		}
 		update();
 		if (form.__inmovFtthLocationWatch) window.clearInterval(form.__inmovFtthLocationWatch);
-		form.__inmovFtthLocationWatch = window.setInterval(function () { syncMapLocation(form); }, 180);
+		form.__inmovFtthLocationWatch = window.setInterval(function () {
+			if (!form.isConnected) { window.clearInterval(form.__inmovFtthLocationWatch); form.__inmovFtthLocationWatch = null; return; }
+			syncMapLocation(form);
+		}, 180);
 	}
 
 	function prefillForm(form, point) {
@@ -218,6 +220,12 @@
 		setField(form, 'ponto_capacidade_portas', point.capacity);
 		setField(form, 'ponto_observacao', point.observation);
 		setField(form, 'ponto_localizacao', point.lat !== undefined && point.lng !== undefined ? String(point.lat) + ',' + String(point.lng) : '');
+		/* JetPopup reuses the same form node for successive cards. Refresh the
+		 * location state before applying the next record so the watcher never
+		 * keeps comparing against the previously opened point. */
+		form.__inmovFtthPoint = point;
+		form.__inmovFtthLocationSeeded = false;
+		form.__inmovFtthLastCoordinates = validCoordinates(point);
 		/* Open the location section on the current point. The user can still
 		 * leave it unchanged, but the coordinate fields and the JetFormBuilder
 		 * map start with the existing position instead of the provider default. */

@@ -1075,7 +1075,6 @@
 			if (!form.__inmovFtthLocationSeeded && applyEditMapDefaults(form, form.__inmovFtthPoint)) {
 				form.__inmovFtthLocationSeeded = true;
 				form.__inmovFtthLastCoordinates = validEditCoordinates(form.__inmovFtthPoint);
-				if (form.__inmovFtthLocationObserver) form.__inmovFtthLocationObserver.disconnect();
 			}
 		};
 		form.addEventListener('change', function (event) {
@@ -1093,7 +1092,10 @@
 		}
 		update();
 		if (form.__inmovFtthLocationWatch) window.clearInterval(form.__inmovFtthLocationWatch);
-		form.__inmovFtthLocationWatch = window.setInterval(function () { syncEditMapLocation(form); }, 180);
+		form.__inmovFtthLocationWatch = window.setInterval(function () {
+			if (!form.isConnected) { window.clearInterval(form.__inmovFtthLocationWatch); form.__inmovFtthLocationWatch = null; return; }
+			syncEditMapLocation(form);
+		}, 180);
 	}
 
 	function editPointPayload(point) {
@@ -1134,6 +1136,9 @@
 		setEditFieldValue(form, 'ponto_localizacao_lat', payload.lat);
 		setEditFieldValue(form, 'ponto_localizacao_lng', payload.lng);
 		setEditFieldValue(form, 'ponto_localizacao', payload.lat !== undefined && payload.lng !== undefined ? String(payload.lat) + ',' + String(payload.lng) : '');
+		form.__inmovFtthPoint = payload;
+		form.__inmovFtthLocationSeeded = false;
+		form.__inmovFtthLastCoordinates = validEditCoordinates(payload);
 		setEditFieldValue(form, 'inmov_location_mode', 'keep');
 		setEditFieldValue(form, 'inmov_change_reason', '');
 		setEditFieldValue(form, 'inmov_reviewed', '');

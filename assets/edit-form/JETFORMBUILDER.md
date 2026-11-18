@@ -91,7 +91,7 @@ O formulário de ponto já existente no post type `jet-form-builder` (ID `3699`)
 Quando o formulário é enviado, o callback do plugin:
 
 - lê o campo oculto `_inmov_item_id`;
-- valida a permissão `edit_posts` e os campos do ponto;
+- valida a permissão administrativa `manage_options` e os campos do ponto;
 - normaliza os aliases usados pela interface (`loja`/`outro`, `ativo`/`nativo`);
 - atualiza diretamente o item do CCT `pontos_rede_ftth` pelo handler do JetEngine;
 - relê a linha gravada e só confirma sucesso quando os valores persistiram.

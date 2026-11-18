@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.81
+ * Version: 0.10.82
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.81';
+	const VERSION               = '0.10.82';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -49,6 +49,17 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_update_check_link' ) );
 		add_action( 'admin_post_inmov_ftth_check_update', array( $this, 'handle_update_check' ) );
 		add_action( 'admin_notices', array( $this, 'render_update_check_notice' ) );
+	}
+
+	/**
+	 * Editing FTTH points is currently restricted to administrators.
+	 *
+	 * `manage_options` is the standard WordPress administrator capability and
+	 * keeps the same rule on the map UI, directory UI, REST endpoint and
+	 * JetFormBuilder custom action.
+	 */
+	private function can_edit_points() {
+		return is_user_logged_in() && current_user_can( 'manage_options' );
 	}
 
 	/**
@@ -299,7 +310,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		) );
 		register_rest_route( 'inmov-ftth/v1', '/points/(?P<id>\\d+)', array(
 			'methods' => WP_REST_Server::EDITABLE,
-			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'edit_posts' ); },
+			'permission_callback' => function() { return $this->can_edit_points(); },
 			'args' => array(
 				'id' => array( 'required' => true, 'validate_callback' => function( $value ) { return (int) $value > 0; } ),
 			),
@@ -777,7 +788,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			$this->throw_jfb_action_error( 'O formulário não informou qual ponto deve ser atualizado.' );
 			return;
 		}
-		if ( ! is_user_logged_in() || ! current_user_can( 'edit_posts' ) ) {
+		if ( ! $this->can_edit_points() ) {
 			$this->throw_jfb_action_error( 'Você não tem permissão para editar pontos da rede.' );
 			return;
 		}
@@ -1061,7 +1072,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'editPopupSelector' => '.e_pdrf',
 				'editPopupId' => 3701,
 				'editFormId' => 3699,
-				'canEditPoints' => is_user_logged_in() && current_user_can( 'edit_posts' ),
+				'canEditPoints' => $this->can_edit_points(),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 			)
 		);
@@ -1104,7 +1115,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'pointsEndpoint'                 => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
 				'permissionNotificationEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/permission-denied' ) ),
 				'nonce'                          => wp_create_nonce( 'wp_rest' ),
-				'canEditPoints'                  => is_user_logged_in() && current_user_can( 'edit_posts' ),
+				'canEditPoints'                  => $this->can_edit_points(),
 			)
 		);
 	}

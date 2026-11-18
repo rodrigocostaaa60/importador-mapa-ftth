@@ -13,7 +13,7 @@
     "itemIdQueryVariable": "ftth_item_id",
     "itemKindQueryVariable": "ftth_kind",
     "allowedCapabilities": ["read"],
-    "recommendedAdditionalPermissionCheck": "current_user_can('edit_posts') or a capability própria do provedor"
+    "recommendedAdditionalPermissionCheck": "current_user_can('manage_options') enquanto a edição estiver restrita ao administrador"
   },
   "forms": [
     {

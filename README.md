@@ -36,7 +36,7 @@ O preview fica em transient por 30 minutos, vinculado ao usuário autenticado. O
 
 ## Atualizações
 
-- Na página **Plugins**, o link **Verificar atualização** força uma consulta nova à release pública do GitHub e ao atualizador nativo do WordPress.
+- Na página **Plugins**, o link **Verificar atualização** força uma consulta nova à release pública do GitHub e ao atualizador nativo do WordPress. O atualizador aceita tanto o pacote legado `importador-mapa-ftth.zip` quanto os pacotes versionados `importador-mapa-ftth-0.10.x.zip`.
 - A versão da release é armazenada em cache por até 5 minutos; falhas de consulta, por até 1 minuto. Isso evita manter uma versão antiga por horas e permite nova tentativa rápida quando o GitHub estiver temporariamente indisponível.
 
 ## Limites

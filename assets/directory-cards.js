@@ -28,6 +28,8 @@
 			var visual = visuals[key];
 			var widget = field.closest('.elementor-element-72dfbd72');
 			if (!widget || !visual) return;
+			if (field.dataset.inmovDecoratedType === key) return;
+			field.dataset.inmovDecoratedType = key;
 			widget.classList.add('inmov-ftth-listing-type', 'inmov-ftth-type--' + key);
 			field.dataset.glyph = visual.glyph;
 			field.dataset.pointType = key;

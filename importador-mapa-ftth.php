@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.80
+ * Version: 0.10.81
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.80';
+	const VERSION               = '0.10.81';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -1072,6 +1072,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		if ( ! is_page( 3714 ) && ! is_page( 'inventario-da-rede-ftth' ) && ! is_page( 3759 ) && ! is_page( 'pontos-da-rede' ) ) {
 			return;
 		}
+		$this->enqueue_notifications_ui();
 
 		wp_enqueue_style(
 			'inmov-ftth-directory-cards',
@@ -1085,6 +1086,26 @@ final class Inmov_JetEngine_FTTH_Importer {
 			array(),
 			self::VERSION,
 			true
+		);
+		wp_enqueue_script(
+			'inmov-ftth-directory-edit-popup',
+			plugin_dir_url( __FILE__ ) . 'assets/directory-edit-popup.js',
+			array( 'jquery', 'inmov-ftth-directory-cards' ),
+			self::VERSION,
+			true
+		);
+		wp_localize_script(
+			'inmov-ftth-directory-edit-popup',
+			'InmovFtthDirectoryEdit',
+			array(
+				'editPopupSelector'               => '.e_pdrf',
+				'editPopupId'                     => 3701,
+				'editFormId'                     => 3699,
+				'pointsEndpoint'                 => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
+				'permissionNotificationEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/permission-denied' ) ),
+				'nonce'                          => wp_create_nonce( 'wp_rest' ),
+				'canEditPoints'                  => is_user_logged_in() && current_user_can( 'edit_posts' ),
+			)
 		);
 	}
 

@@ -121,6 +121,18 @@
 		try { mapInput.setValue(); } catch (error) {}
 	}
 
+	function setMapReactiveLocation(form, value) {
+		if (!form || !form.getAttribute) return;
+		var formId = text(form.getAttribute('data-form-id'));
+		var registry = window.JetFormBuilder;
+		var instance = formId && registry ? registry[formId] : null;
+		var mapInput = instance && instance.dataInputs ? instance.dataInputs.ponto_localizacao : null;
+		if (!mapInput) return;
+		var node = mapInput.nodes && mapInput.nodes[0];
+		if (node) node.value = String(value || '');
+		refreshMapReactiveValue(form);
+	}
+
 	function validCoordinates(point) {
 		var lat = Number(point && point.lat);
 		var lng = Number(point && point.lng);
@@ -152,6 +164,7 @@
 		setField(form, 'ponto_latitude', value.split(',')[0]);
 		setField(form, 'ponto_longitude', value.split(',')[1]);
 		setField(form, 'ponto_localizacao', value);
+		setMapReactiveLocation(form, value);
 		if (!mapField) return false;
 		if (valueField) {
 			if (String(valueField.value || '') !== value) {
@@ -203,6 +216,7 @@
 		form.__inmovFtthLastCoordinates = coordinates;
 		var original = validCoordinates(form.__inmovFtthPoint);
 		if (original && Math.abs(original.lat - coordinates.lat) < 0.0000001 && Math.abs(original.lng - coordinates.lng) < 0.0000001) return;
+		form.__inmovFtthMapPositionChanged = true;
 		setField(form, 'ponto_latitude', coordinates.lat);
 		setField(form, 'ponto_longitude', coordinates.lng);
 		setField(form, 'ponto_localizacao', coordinates.lat + ',' + coordinates.lng);
@@ -219,6 +233,21 @@
 				window.clearInterval(form.__inmovFtthLocationWatch);
 				form.__inmovFtthLocationWatch = null;
 			}
+		};
+		var stopMapValueWatch = function () {
+			if (typeof form.__inmovFtthMapValueUnwatch === 'function') {
+				try { form.__inmovFtthMapValueUnwatch(); } catch (error) {}
+			}
+			form.__inmovFtthMapValueUnwatch = null;
+		};
+		var startMapValueWatch = function () {
+			stopMapValueWatch();
+			var formId = text(form.getAttribute('data-form-id'));
+			var registry = window.JetFormBuilder;
+			var instance = formId && registry ? registry[formId] : null;
+			var mapInput = instance && instance.dataInputs ? instance.dataInputs.ponto_localizacao : null;
+			if (!mapInput || !mapInput.value || typeof mapInput.value.watch !== 'function') return;
+			form.__inmovFtthMapValueUnwatch = mapInput.value.watch(function () { syncMapLocation(form); });
 		};
 		var startLocationWatch = function () {
 			stopLocationWatch();
@@ -247,7 +276,11 @@
 				form.__inmovFtthLocationObserver.disconnect();
 				form.__inmovFtthLocationObserver = null;
 			}
-			if (update(preserveMapPosition) || typeof MutationObserver !== 'function') return;
+			if (update(preserveMapPosition)) {
+				startMapValueWatch();
+				return;
+			}
+			if (typeof MutationObserver !== 'function') return;
 			/* Conditional blocks with hide.dom enabled insert the map after the
 			 * radio event. Observe only until the field is seeded, then disconnect
 			 * immediately so this cannot retain the popup or loop on map mutations. */
@@ -255,6 +288,7 @@
 				if (update(preserveMapPosition) && form.__inmovFtthLocationObserver) {
 					form.__inmovFtthLocationObserver.disconnect();
 					form.__inmovFtthLocationObserver = null;
+					startMapValueWatch();
 				}
 			});
 			form.__inmovFtthLocationObserver.observe(form, { childList: true, subtree: true });
@@ -263,6 +297,7 @@
 			if (!event.target || event.target.name !== 'inmov_location_mode') return;
 			if (event.target.value === 'keep') {
 				stopLocationWatch();
+				stopMapValueWatch();
 				if (form.__inmovFtthLocationObserver) {
 					form.__inmovFtthLocationObserver.disconnect();
 					form.__inmovFtthLocationObserver = null;
@@ -272,7 +307,7 @@
 				applyMapDefaults(form, form.__inmovFtthPoint, false);
 			} else {
 				form.__inmovFtthLocationSeeded = false;
-				startMapFieldObserver(true);
+				startMapFieldObserver(form.__inmovFtthMapPositionChanged === true);
 				startLocationWatch();
 				window.setTimeout(syncMapLocation, 0, form);
 			}
@@ -316,6 +351,11 @@
 		form.__inmovFtthPoint = point;
 		form.__inmovFtthLocationSeeded = false;
 		form.__inmovFtthLastCoordinates = validCoordinates(point);
+		form.__inmovFtthMapPositionChanged = false;
+		if (typeof form.__inmovFtthMapValueUnwatch === 'function') {
+			try { form.__inmovFtthMapValueUnwatch(); } catch (error) {}
+			form.__inmovFtthMapValueUnwatch = null;
+		}
 		/* Open the location section on the current point. The user can still
 		 * leave it unchanged, but the coordinate fields and the JetFormBuilder
 		 * map start with the existing position instead of the provider default. */
@@ -444,6 +484,10 @@
 						if (form.__inmovFtthLocationWatch) {
 							window.clearInterval(form.__inmovFtthLocationWatch);
 							form.__inmovFtthLocationWatch = null;
+						}
+						if (typeof form.__inmovFtthMapValueUnwatch === 'function') {
+							try { form.__inmovFtthMapValueUnwatch(); } catch (error) {}
+							form.__inmovFtthMapValueUnwatch = null;
 						}
 					});
 				});

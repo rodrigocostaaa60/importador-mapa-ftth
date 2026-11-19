@@ -222,35 +222,64 @@
 				syncMapLocation(form);
 			}, 250);
 		};
-		var update = function () {
-			if (!form.__inmovFtthLocationSeeded && applyMapDefaults(form, form.__inmovFtthPoint)) {
+		var update = function (preserveMapPosition) {
+			if (!form.__inmovFtthLocationSeeded && applyMapDefaults(form, form.__inmovFtthPoint, !!preserveMapPosition)) {
 				form.__inmovFtthLocationSeeded = true;
 				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
+				return true;
 			}
+			return !!form.__inmovFtthLocationSeeded;
+		};
+		var startMapFieldObserver = function (preserveMapPosition) {
+			if (form.__inmovFtthLocationObserver) {
+				form.__inmovFtthLocationObserver.disconnect();
+				form.__inmovFtthLocationObserver = null;
+			}
+			if (update(preserveMapPosition) || typeof MutationObserver !== 'function') return;
+			/* Conditional blocks with hide.dom enabled insert the map after the
+			 * radio event. Observe only until the field is seeded, then disconnect
+			 * immediately so this cannot retain the popup or loop on map mutations. */
+			form.__inmovFtthLocationObserver = new MutationObserver(function () {
+				if (update(preserveMapPosition) && form.__inmovFtthLocationObserver) {
+					form.__inmovFtthLocationObserver.disconnect();
+					form.__inmovFtthLocationObserver = null;
+				}
+			});
+			form.__inmovFtthLocationObserver.observe(form, { childList: true, subtree: true });
 		};
 		form.addEventListener('change', function (event) {
 			if (!event.target || event.target.name !== 'inmov_location_mode') return;
 			if (event.target.value === 'keep') {
 				stopLocationWatch();
+				if (form.__inmovFtthLocationObserver) {
+					form.__inmovFtthLocationObserver.disconnect();
+					form.__inmovFtthLocationObserver = null;
+				}
 				form.__inmovFtthLocationSeeded = false;
 				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
 				applyMapDefaults(form, form.__inmovFtthPoint, false);
 			} else {
 				form.__inmovFtthLocationSeeded = false;
+				startMapFieldObserver(true);
 				startLocationWatch();
 				window.setTimeout(syncMapLocation, 0, form);
 			}
 		});
-		update();
+		startMapFieldObserver(false);
 		/* The map field can render asynchronously inside JetPopup. Retry only for
 		 * a bounded period instead of observing the complete form subtree forever. */
 		var readyChecks = 0;
 		var readyTimer = window.setInterval(function () {
-				if (form.__inmovFtthLocationSeeded || !form.isConnected || ++readyChecks > 40) {
+			if (form.__inmovFtthLocationSeeded || !form.isConnected || ++readyChecks > 40) {
 				window.clearInterval(readyTimer);
+				if (form.__inmovFtthLocationObserver) {
+					form.__inmovFtthLocationObserver.disconnect();
+					form.__inmovFtthLocationObserver = null;
+				}
 				return;
 			}
-			update();
+			var checkedMode = form.querySelector('[name="inmov_location_mode"]:checked');
+			startMapFieldObserver(!!(checkedMode && checkedMode.value === 'map'));
 		}, 125);
 	}
 

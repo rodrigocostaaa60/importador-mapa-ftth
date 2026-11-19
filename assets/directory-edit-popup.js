@@ -97,14 +97,28 @@
 				changed = String(input.value || '') !== normalized;
 				input.value = normalized;
 			}
-			/* JetFormBuilder's map field reacts to change/input by synchronizing
-			 * its Mapbox instance. Do not emit synthetic events when the value is
-			 * already correct; repeated popup opens used to create a feedback loop
-			 * that retained map nodes and drove browser memory into gigabytes. */
-			if (!changed) return;
+			/* The map input is special: JetFormBuilder's generic input listener
+			 * replaces its reactive {lat,lng} value with the raw string when a
+			 * synthetic input event is dispatched. The next IntersectionObserver
+			 * render then passes undefined coordinates to Mapbox (NaN, NaN). Set
+			 * the hidden value directly and let the map signal own map clicks. */
+			if (!changed || name === 'ponto_localizacao') return;
 			try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (eventError) {}
 			try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (eventError2) {}
 		});
+	}
+
+	function refreshMapReactiveValue(form) {
+		if (!form || !form.getAttribute) return;
+		var formId = text(form.getAttribute('data-form-id'));
+		var registry = window.JetFormBuilder;
+		var instance = formId && registry ? registry[formId] : null;
+		var mapInput = instance && instance.dataInputs ? instance.dataInputs.ponto_localizacao : null;
+		if (!mapInput || typeof mapInput.setValue !== 'function') return;
+		/* MapFieldInputData.setValue parses the hidden location string back into
+		 * its reactive coordinate object. Do this before IntersectionObserver
+		 * invokes render(), without notifying the signal while no map exists. */
+		try { mapInput.setValue(); } catch (error) {}
 	}
 
 	function validCoordinates(point) {
@@ -142,10 +156,9 @@
 		if (valueField) {
 			if (String(valueField.value || '') !== value) {
 				valueField.value = value;
-				try { valueField.dispatchEvent(new Event('input', { bubbles: true })); } catch (error) {}
-				try { valueField.dispatchEvent(new Event('change', { bubbles: true })); } catch (error2) {}
 			}
 		}
+		refreshMapReactiveValue(form);
 		if (latField) latField.value = String(coordinates.lat);
 		if (lngField) lngField.value = String(coordinates.lng);
 		if (hashField && !hashField.value) hashField.value = value;
@@ -193,7 +206,6 @@
 		setField(form, 'ponto_latitude', coordinates.lat);
 		setField(form, 'ponto_longitude', coordinates.lng);
 		setField(form, 'ponto_localizacao', coordinates.lat + ',' + coordinates.lng);
-		setField(form, 'inmov_location_mode', 'map');
 		reverseGeocode(form, coordinates);
 	}
 

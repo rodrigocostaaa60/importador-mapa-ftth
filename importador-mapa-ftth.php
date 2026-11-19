@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.04
+ * Version: 0.11.05
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.04';
+	const VERSION               = '0.11.05';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -851,6 +851,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			}
 			$hook_name = (string) ( $settings['hook_name'] ?? '' );
 			$editor_name = (string) ( $action['editor_name'] ?? '' );
+			$action_type = strtolower( (string) ( $action['type'] ?? '' ) );
 			if ( 'inmov_ftth_upsert_route' === $hook_name ) {
 				$has_route_hook = true;
 				$filtered[] = $action;
@@ -858,7 +859,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			}
 			/* Remove only the generic route CCT action; keep unrelated JFB actions
 			 * such as Save Form Record and redirect. */
-			if ( false !== stripos( $editor_name, 'Insert/Update Custom Content Type Item' ) || false !== stripos( $editor_name, 'Trechos e Rotas de Fibra' ) ) {
+			if ( false !== stripos( $editor_name, 'Insert/Update' ) || false !== stripos( $editor_name, 'Trechos e Rotas de Fibra' ) || false !== strpos( $action_type, 'custom_content_type' ) || false !== strpos( $action_type, 'insert_update' ) ) {
 				continue;
 			}
 			$filtered[] = $action;
@@ -953,11 +954,18 @@ final class Inmov_JetEngine_FTTH_Importer {
 			$this->throw_jfb_action_error( 'O CCT de rotas de fibra não está disponível.' );
 			return;
 		}
+		$saved_id = 0;
 		try {
 			$saved_id = $type->get_item_handler()->update_item( $data );
 		} catch ( Throwable $error ) {
-			$this->throw_jfb_action_error( 'Não foi possível salvar a rota: ' . $error->getMessage() );
-			return;
+			$saved_id = 0;
+		}
+		/* A few JetEngine releases return the update-only error even when the
+		 * incoming item id is empty. Keep JetEngine as the first path, then use
+		 * the same CCT table as a compatibility fallback so a new route cannot be
+		 * mistaken for an update. */
+		if ( is_wp_error( $saved_id ) || ! $saved_id ) {
+			$saved_id = $this->persist_route_cct_direct( $id, $data );
 		}
 		if ( is_wp_error( $saved_id ) || ! $saved_id ) {
 			$this->throw_jfb_action_error( 'O JetEngine não confirmou a gravação da rota.' );
@@ -970,6 +978,40 @@ final class Inmov_JetEngine_FTTH_Importer {
 		if ( ! $exists ) {
 			$this->throw_jfb_action_error( 'A rota não foi encontrada após a gravação.' );
 		}
+	}
+
+	/** Compatibility persistence for JetEngine versions that reject a blank CCT id. */
+	private function persist_route_cct_direct( $id, $data ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'jet_cct_rotas_fibra';
+		$now = time();
+		$fields = array(
+			'cct_status'              => 'publish',
+			'cct_author_id'           => get_current_user_id(),
+			'cct_created'             => $now,
+			'cct_modified'            => $now,
+			'rota_codigo'             => $data['rota_codigo'],
+			'rota_nome'               => $data['rota_nome'],
+			'rota_localidade'         => $data['rota_localidade'],
+			'rota_tipo'               => $data['rota_tipo'],
+			'rota_tipo_cabo'          => $data['rota_tipo_cabo'],
+			'rota_quantidade_fibras'  => $data['rota_quantidade_fibras'],
+			'rota_status'             => $data['rota_status'],
+			'rota_cor_mapa'           => $data['rota_cor_mapa'],
+			'rota_ponto_inicio_codigo' => $data['rota_ponto_inicio_codigo'],
+			'rota_ponto_fim_codigo'   => $data['rota_ponto_fim_codigo'],
+			'rota_geometria_geojson'  => $data['rota_geometria_geojson'],
+			'rota_comprimento_metros' => $data['rota_comprimento_metros'],
+			'rota_observacao'         => $data['rota_observacao'],
+		);
+		if ( $id ) {
+			unset( $fields['cct_created'], $fields['cct_author_id'] );
+			$fields['cct_modified'] = $now;
+			$result = $wpdb->update( $table, $fields, array( '_ID' => $id ) );
+			return false === $result ? 0 : (int) $id;
+		}
+		$result = $wpdb->insert( $table, $fields );
+		return false === $result ? 0 : (int) $wpdb->insert_id;
 	}
 
 	/**

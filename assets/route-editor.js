@@ -11,12 +11,9 @@
     var vertexMarkers = [];
     var coordinates = [];
     var drawing = true;
-    var loadedRecordId = '';
-    var loadToken = 0;
+    var geocodeToken = 0;
 
     function qs(selector, root) { return (root || document).querySelector(selector); }
-
-    function each(list, callback) { Array.prototype.forEach.call(list || [], callback); }
 
     function field(name) { return form && form.querySelector('[name="' + name + '"]'); }
 
@@ -72,9 +69,21 @@
         try { fieldNode.dispatchEvent(new Event('change', { bubbles: true })); } catch (error) {}
     }
 
+    function ensureSelectOption(node, value) {
+        if (!node || node.tagName !== 'SELECT' || value === '') return;
+        var exists = Array.prototype.some.call(node.options || [], function (option) { return String(option.value) === String(value); });
+        if (exists) return;
+        var option = document.createElement('option');
+        option.value = String(value);
+        option.textContent = String(value).replace(/_/g, ' ');
+        option.dataset.inmovPreserved = '1';
+        node.appendChild(option);
+    }
+
     function setField(name, value) {
         var node = field(name);
         if (!node) return;
+        ensureSelectOption(node, value === undefined || value === null ? '' : String(value));
         node.value = value === undefined || value === null ? '' : String(value);
         dispatchField(node);
     }
@@ -90,14 +99,18 @@
             dispatchField(geometry);
         }
         var length = field('rota_comprimento_metros');
-        if (length && coordinates.length >= 2) {
-            length.value = calculateLength();
+        var meters = coordinates.length >= 2 ? calculateLength() : null;
+        if (length) {
+            length.value = meters === null ? '' : meters;
             dispatchField(length);
         }
+        if (lengthDisplayNode) {
+            lengthDisplayNode.textContent = meters === null ? 'Comprimento estimado: —' : 'Comprimento estimado: ' + formatMeters(meters);
+        }
         if (stateNode) {
-            if (!coordinates.length) stateNode.textContent = 'Clique no mapa para iniciar o traçado.';
+            if (!coordinates.length) stateNode.textContent = 'Clique no mapa para iniciar o desenho.';
             else if (coordinates.length === 1) stateNode.textContent = '1 ponto marcado. Clique novamente para criar a linha.';
-            else stateNode.textContent = coordinates.length + ' pontos · ' + formatMeters(calculateLength());
+            else stateNode.textContent = coordinates.length + ' pontos marcados. Você pode ajustar os vértices.';
         }
         if (finishButton) finishButton.disabled = coordinates.length < 2;
         if (undoButton) undoButton.disabled = coordinates.length === 0;
@@ -108,6 +121,46 @@
         if (!stateNode) return;
         stateNode.textContent = message;
         stateNode.dataset.state = type || 'info';
+    }
+
+    function hashString(value) {
+        var hash = 2166136261;
+        String(value || '').split('').forEach(function (character) {
+            hash ^= character.charCodeAt(0);
+            hash = Math.imul(hash, 16777619);
+        });
+        return ('00000000' + (hash >>> 0).toString(16).toUpperCase()).slice(-8);
+    }
+
+    function ensureRouteCode() {
+        var code = field('rota_codigo');
+        if (!code || String(code.value || '').trim() || !coordinates.length) return;
+        var fingerprint = [
+            field('rota_nome') && field('rota_nome').value,
+            field('rota_localidade') && field('rota_localidade').value,
+            field('rota_tipo') && field('rota_tipo').value,
+            coordinates[0][0].toFixed(6), coordinates[0][1].toFixed(6), Date.now()
+        ].join('|');
+        setField('rota_codigo', 'IMP-R-' + hashString(fingerprint) + hashString(fingerprint + '|route').slice(0, 2));
+    }
+
+    function updateLocalityFromFirstPoint(keepExisting) {
+        if (!coordinates.length || !config.reverseGeocodeEndpoint || typeof window.fetch !== 'function') {
+            if (!coordinates.length && !keepExisting) setField('rota_localidade', '');
+            return;
+        }
+        var token = ++geocodeToken;
+        var coordinate = coordinates[0];
+        setStatus('Localizando a cidade do primeiro ponto…', 'info');
+        var url = config.reverseGeocodeEndpoint + '?lat=' + encodeURIComponent(coordinate[1]) + '&lng=' + encodeURIComponent(coordinate[0]);
+        window.fetch(url, { credentials: 'same-origin', headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {} })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (result) {
+                if (token !== geocodeToken || !result) return;
+                if (result.locality) setField('rota_localidade', result.locality);
+                setStatus(result.locality ? 'Cidade preenchida a partir do primeiro ponto.' : 'Não foi possível identificar a cidade automaticamente.', result.locality ? 'success' : 'error');
+            })
+            .catch(function () { if (token === geocodeToken) setStatus('Não foi possível identificar a cidade. Você pode preenchê-la manualmente.', 'error'); });
     }
 
     function removeMarkers() {
@@ -146,6 +199,7 @@
                 syncFields();
             });
             marker.on('dragend', function () {
+                if (index === 0) updateLocalityFromFirstPoint(true);
                 setStatus('Vértice ajustado. Arraste outros pontos ou finalize o traçado.', 'success');
                 refreshMarkers();
             });
@@ -172,7 +226,9 @@
         drawing = true;
         if (modeNode) modeNode.textContent = 'Modo de edição ativo';
         refreshEditor();
+        ensureRouteCode();
         if (coordinates.length) fitCoordinates();
+        if (coordinates.length) updateLocalityFromFirstPoint(true);
         if (message) setStatus(message, 'success');
     }
 
@@ -182,6 +238,8 @@
         if (!validCoordinate(pair)) return;
         coordinates.push(pair);
         refreshEditor();
+        ensureRouteCode();
+        if (coordinates.length === 1) updateLocalityFromFirstPoint(false);
         setStatus(coordinates.length + ' ponto' + (coordinates.length === 1 ? '' : 's') + ' marcado' + (coordinates.length === 1 ? '' : 's') + '.', 'success');
     }
 
@@ -195,25 +253,27 @@
     function clear() {
         coordinates = [];
         drawing = true;
+        geocodeToken += 1;
+        setField('rota_localidade', '');
         refreshEditor();
-        setStatus('Traçado limpo. Clique no mapa para começar.', 'info');
+        setStatus('Desenho limpo. Clique no mapa para começar uma nova rota.', 'info');
     }
 
     function finish() {
-        if (coordinates.length < 2) { setStatus('Marque pelo menos dois pontos para finalizar a linha.', 'error'); return; }
+        if (coordinates.length < 2) { setStatus('Marque pelo menos dois pontos para concluir a rota.', 'error'); return; }
         drawing = false;
-        if (modeNode) modeNode.textContent = 'Traçado finalizado · arraste os vértices para ajustar';
-        setStatus('Traçado pronto. Revise a linha e salve a rota quando terminar.', 'success');
+        if (modeNode) modeNode.textContent = 'Desenho concluído · arraste os vértices para ajustar';
+        setStatus('Rota pronta. Revise o desenho e salve quando terminar.', 'success');
     }
 
     function addEditorMarkup(geometryField) {
         var row = geometryField.closest ? geometryField.closest('.jet-form-builder-row, .jet-form-builder__field-wrap, .jet-form-builder-field') : null;
         var host = document.createElement('section');
         host.className = 'inmov-ftth-route-editor';
-        host.innerHTML = '<div class="inmov-ftth-route-editor__header"><div><span class="inmov-ftth-route-editor__eyebrow">Editor visual</span><h2>Desenhe o traçado da fibra</h2><p>Clique no mapa para adicionar os vértices. Depois, arraste os pontos para ajustar o caminho.</p></div><span class="inmov-ftth-route-editor__mode" data-route-editor-mode>Modo de edição ativo</span></div>' +
+        host.innerHTML = '<div class="inmov-ftth-route-editor__header"><div><span class="inmov-ftth-route-editor__eyebrow">Editor visual</span><h2>Defina o trajeto da fibra</h2><p>Clique no mapa para adicionar pontos ao percurso. Depois, arraste os marcadores para ajustar o caminho.</p></div><span class="inmov-ftth-route-editor__mode" data-route-editor-mode>Modo de desenho ativo</span></div>' +
             '<div class="inmov-ftth-route-editor__map" data-route-editor-map></div>' +
-            '<div class="inmov-ftth-route-editor__toolbar"><button type="button" data-route-editor-action="undo">Desfazer</button><button type="button" data-route-editor-action="clear">Limpar traçado</button><button type="button" data-route-editor-action="fit">Enquadrar linha</button><button type="button" class="is-primary" data-route-editor-action="finish">Finalizar traçado</button></div>' +
-            '<div class="inmov-ftth-route-editor__footer"><span data-route-editor-status>Clique no mapa para iniciar o traçado.</span><span class="inmov-ftth-route-editor__fallback">A geometria GeoJSON continua disponível abaixo como alternativa.</span></div>';
+            '<div class="inmov-ftth-route-editor__toolbar"><button type="button" data-route-editor-action="undo">Desfazer</button><button type="button" data-route-editor-action="clear">Limpar desenho</button><button type="button" data-route-editor-action="fit">Enquadrar rota</button><button type="button" class="is-primary" data-route-editor-action="finish">Concluir desenho</button></div>' +
+            '<div class="inmov-ftth-route-editor__footer"><span data-route-editor-status>Clique no mapa para iniciar o desenho.</span><span class="inmov-ftth-route-editor__length" data-route-editor-length>Comprimento estimado: —</span></div>';
         if (row && row.parentNode) row.parentNode.insertBefore(host, row);
         else geometryField.parentNode.insertBefore(host, geometryField);
         return host;
@@ -224,7 +284,7 @@
         function check() {
             if (window.mapboxgl && window.JetEngineMapboxData && window.JetEngineMapboxData.token) { callback(); return; }
             attempts += 1;
-            if (attempts > 120) { setStatus('O mapa não pôde ser carregado. Use o campo GeoJSON abaixo ou recarregue a página.', 'error'); return; }
+            if (attempts > 120) { setStatus('O editor de traçado não carregou. Atualize a página e tente novamente.', 'error'); return; }
             window.setTimeout(check, 100);
         }
         check();
@@ -255,7 +315,6 @@
         setField('rota_comprimento_metros', properties.lengthM || properties.rota_comprimento_metros || '');
         setField('rota_observacao', properties.observation || properties.rota_observacao || '');
         setCoordinates(record.geometry || properties.geometry || properties.coordinates || [], 'Rota carregada. Você pode ajustar o traçado pelos vértices.');
-        loadedRecordId = String(record.id || properties.id || '');
     }
 
     function initMap(host) {
@@ -286,6 +345,7 @@
     var finishButton;
     var undoButton;
     var clearButton;
+    var lengthDisplayNode;
 
     function start() {
         form = document.querySelector('form[data-form-id="3700"], form.jet-form-builder');
@@ -297,10 +357,20 @@
         finishButton = qs('[data-route-editor-action="finish"]', host);
         undoButton = qs('[data-route-editor-action="undo"]', host);
         clearButton = qs('[data-route-editor-action="clear"]', host);
+        lengthDisplayNode = qs('[data-route-editor-length]', host);
         qs('[data-route-editor-action="undo"]', host).addEventListener('click', undo);
         qs('[data-route-editor-action="clear"]', host).addEventListener('click', clear);
         qs('[data-route-editor-action="fit"]', host).addEventListener('click', fitCoordinates);
         finishButton.addEventListener('click', finish);
+        form.addEventListener('submit', function (event) {
+            if (coordinates.length < 2) {
+                event.preventDefault();
+                setStatus('Desenhe pelo menos dois pontos para salvar a rota.', 'error');
+                return;
+            }
+            ensureRouteCode();
+            syncFields();
+        }, true);
         geometryField.addEventListener('input', function () {
             var parsed = normalizeCoordinates(geometryField.value);
             if (JSON.stringify(parsed) !== JSON.stringify(coordinates)) { coordinates = parsed; refreshEditor(); }

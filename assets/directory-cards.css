@@ -28,3 +28,22 @@
 .jet-listing-grid .inmov-ftth-type--poste .jet-listing-dynamic-field__content::before {
 	font-size: 18px;
 }
+
+/* Elementor center-aligns this inner container on desktop. With only one
+ * result, the listing widget can otherwise shrink to the card's min-content
+ * width and make every field wrap vertically. Keep the grid stretched. */
+@media (min-width: 768px) {
+	body.elementor-page-3714 #ftth-points,
+	body.elementor-page-3759 #ftth-points {
+		align-self: stretch !important;
+		width: 100% !important;
+		max-width: none !important;
+	}
+	body.elementor-page-3714 #ftth-points > .jet-listing-grid,
+	body.elementor-page-3759 #ftth-points > .jet-listing-grid,
+	body.elementor-page-3714 #ftth-points .jet-listing-grid__items,
+	body.elementor-page-3759 #ftth-points .jet-listing-grid__items {
+		width: 100% !important;
+		max-width: none !important;
+	}
+}

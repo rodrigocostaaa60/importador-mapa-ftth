@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.86
+ * Version: 0.10.87
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.86';
+	const VERSION               = '0.10.87';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -21,6 +21,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 	const NONCE_ACTION  = 'inmov_ftth_import';
 
 	private static $instance = null;
+	/** Cache author display names for the duration of a request. */
+	private $author_name_cache = array();
 
 	public static function instance() {
 		if ( null === self::$instance ) {
@@ -307,6 +309,14 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'methods' => WP_REST_Server::READABLE,
 			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
 			'callback' => array( $this, 'get_points' ),
+		) );
+		register_rest_route( 'inmov-ftth/v1', '/points/(?P<id>\\d+)/details', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'args'                => array(
+				'id' => array( 'required' => true, 'validate_callback' => function( $value ) { return (int) $value > 0; } ),
+			),
+			'callback'            => array( $this, 'get_point_details' ),
 		) );
 		register_rest_route( 'inmov-ftth/v1', '/location/reverse', array(
 			'methods'             => WP_REST_Server::READABLE,
@@ -728,6 +738,12 @@ final class Inmov_JetEngine_FTTH_Importer {
 	 * Actions list and is safe to run repeatedly without duplicating itself.
 	 */
 	public function configure_jfb_point_form() {
+		/* Provisioning is an admin-side concern. Running this metadata scan on
+		 * every public request made the edit-form integration pay for a post/meta
+		 * read (and sometimes a write) before the page could render. */
+		if ( ! is_admin() && ! wp_doing_ajax() ) {
+			return;
+		}
 		if ( ! function_exists( 'jet_form_builder' ) && ! class_exists( 'Jet_Form_Builder\\Plugin' ) ) {
 			return;
 		}
@@ -917,15 +933,18 @@ final class Inmov_JetEngine_FTTH_Importer {
 			}
 		}
 
-		$all = $this->get_points();
-		$items = $all instanceof WP_REST_Response ? $all->get_data() : array();
-		$updated = null;
-		foreach ( $items as $item ) {
-			if ( (int) ( $item['id'] ?? 0 ) === $id ) {
-				$updated = $item;
-				break;
-			}
-		}
+		/* Return only the row that was edited. The previous implementation
+		 * regenerated the complete map payload (up to 3,000 points) here, which
+		 * made every edit wait on a full database read and author lookup. */
+		$updated_row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE _ID = %d AND cct_status = %s LIMIT 1",
+				$id,
+				'publish'
+			),
+			ARRAY_A
+		);
+		$updated = is_array( $updated_row ) ? $this->format_point_record( $updated_row ) : null;
 		return rest_ensure_response( array( 'updated' => true, 'point' => $updated ) );
 	}
 
@@ -956,7 +975,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		);
 		$response = wp_remote_get( $url, array(
 			'timeout' => 8,
-			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.86 (WordPress reverse geocoder)' ),
+			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.87 (WordPress reverse geocoder)' ),
 		) );
 		if ( is_wp_error( $response ) ) {
 			return rest_ensure_response( array( 'found' => false, 'locality' => '', 'address' => '' ) );
@@ -1003,18 +1022,42 @@ final class Inmov_JetEngine_FTTH_Importer {
 		global $wpdb;
 		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
 		$rows = $wpdb->get_results( "SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND ponto_status <> 'inativo' LIMIT 3000", ARRAY_A );
-		return rest_ensure_response( array_map( function( $row ) {
-			$saved_type = (string) $row['ponto_tipo'];
-			$inferred_type = $this->detect_point_type( strtolower( remove_accents( (string) $row['ponto_nome'] . ' ' . (string) $row['ponto_observacao'] ) ) );
-			$display_type = ( ( '' === $saved_type || 'outro' === $saved_type ) && 'outro' !== $inferred_type ) ? $inferred_type : $saved_type;
-			$audit = $this->cct_audit_data( $row['cct_modified'] ?? '', $row['cct_created'] ?? '', $row['cct_author_id'] ?? 0 );
-			return array(
-			'id' => (int) $row['_ID'], 'code' => (string) $row['ponto_codigo'], 'name' => (string) $row['ponto_nome'],
-			'type' => $display_type, 'locality' => (string) $row['ponto_localidade'], 'address' => (string) $row['ponto_endereco'],
-			'lat' => (float) $row['ponto_latitude'], 'lng' => (float) $row['ponto_longitude'], 'status' => (string) $row['ponto_status'],
-			'capacity' => (int) $row['ponto_capacidade_portas'], 'observation' => (string) $row['ponto_observacao'],
+		return rest_ensure_response( array_map( array( $this, 'format_point_record' ), is_array( $rows ) ? $rows : array() ) );
+	}
+
+	/** Return one point for the edit popup instead of downloading the full map. */
+	public function get_point_details( WP_REST_Request $request ) {
+		global $wpdb;
+		$id    = absint( $request['id'] );
+		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
+		$row   = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE _ID = %d AND cct_status = %s AND ponto_status <> %s LIMIT 1",
+				$id,
+				'publish',
+				'inativo'
+			),
+			ARRAY_A
+		);
+		if ( ! is_array( $row ) ) {
+			return new WP_Error( 'inmov_ftth_point_not_found', 'Ponto não encontrado.', array( 'status' => 404 ) );
+		}
+		return rest_ensure_response( $this->format_point_record( $row ) );
+	}
+
+	/** Normalize the CCT row into the public point payload used by the map. */
+	private function format_point_record( $row ) {
+		$saved_type    = (string) ( $row['ponto_tipo'] ?? '' );
+		$inferred_type = $this->detect_point_type( strtolower( remove_accents( (string) ( $row['ponto_nome'] ?? '' ) . ' ' . (string) ( $row['ponto_observacao'] ?? '' ) ) ) );
+		$display_type  = ( ( '' === $saved_type || 'outro' === $saved_type ) && 'outro' !== $inferred_type ) ? $inferred_type : $saved_type;
+		$audit         = $this->cct_audit_data( $row['cct_modified'] ?? '', $row['cct_created'] ?? '', $row['cct_author_id'] ?? 0 );
+		return array(
+			'id' => (int) ( $row['_ID'] ?? 0 ), 'code' => (string) ( $row['ponto_codigo'] ?? '' ), 'name' => (string) ( $row['ponto_nome'] ?? '' ),
+			'type' => $display_type, 'locality' => (string) ( $row['ponto_localidade'] ?? '' ), 'address' => (string) ( $row['ponto_endereco'] ?? '' ),
+			'lat' => (float) ( $row['ponto_latitude'] ?? 0 ), 'lng' => (float) ( $row['ponto_longitude'] ?? 0 ), 'status' => (string) ( $row['ponto_status'] ?? '' ),
+			'capacity' => (int) ( $row['ponto_capacidade_portas'] ?? 0 ), 'observation' => (string) ( $row['ponto_observacao'] ?? '' ),
 			'updatedAt' => $audit['date'], 'updatedBy' => $audit['user'],
-		); }, $rows ) );
+		);
 	}
 
 	/** Format the CCT audit timestamp and creator without exposing database internals. */
@@ -1022,10 +1065,13 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$value = $modified ?: $created;
 		$timestamp = is_numeric( $value ) ? (int) $value : ( $value ? strtotime( (string) $value ) : 0 );
 		$date = $timestamp ? wp_date( 'd/m/Y H:i', $timestamp, wp_timezone() ) : '';
-		$user = '';
-		$user_data = get_userdata( (int) $author_id );
-		if ( $user_data ) {
-			$user = $user_data->display_name ?: $user_data->user_login;
+		$author_id = (int) $author_id;
+		if ( array_key_exists( $author_id, $this->author_name_cache ) ) {
+			$user = $this->author_name_cache[ $author_id ];
+		} else {
+			$user_data = $author_id ? get_userdata( $author_id ) : false;
+			$user = $user_data ? ( $user_data->display_name ?: $user_data->user_login ) : '';
+			$this->author_name_cache[ $author_id ] = $user;
 		}
 		return array( 'date' => $date, 'user' => $user );
 	}
@@ -1193,6 +1239,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'editPopupId'                     => 3701,
 				'editFormId'                     => 3699,
 				'pointsEndpoint'                 => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
+				'pointDetailsEndpoint'           => esc_url_raw( rest_url( 'inmov-ftth/v1/points' ) ),
 				'reverseGeocodeEndpoint'          => esc_url_raw( rest_url( 'inmov-ftth/v1/location/reverse' ) ),
 				'permissionNotificationEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/notifications/permission-denied' ) ),
 				'nonce'                          => wp_create_nonce( 'wp_rest' ),

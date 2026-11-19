@@ -3,7 +3,6 @@
 
 	var config = window.InmovFtthDirectoryEdit || {};
 	var pendingPoint = null;
-	var pointRequest = null;
 	var popupBindTimer = null;
 	var prefillTimer = null;
 	var noticeTimer = null;
@@ -261,18 +260,16 @@
 	}
 
 	function loadPointDetails(point) {
-		if (!point || !point.id || !config.pointsEndpoint || typeof window.fetch !== 'function') return Promise.resolve(point);
-		if (!pointRequest) {
-			pointRequest = window.fetch(config.pointsEndpoint, {
-				credentials: 'same-origin',
-				headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {}
-			}).then(function (response) { return response.ok ? response.json() : []; }).catch(function () { return []; });
-		}
-		return pointRequest.then(function (items) {
-			if (!Array.isArray(items)) return point;
-			var full = items.find(function (item) { return String(item && item.id) === String(point.id); });
-			return full ? Object.assign({}, point, full) : point;
-		});
+		if (!point || !point.id || !config.pointDetailsEndpoint || typeof window.fetch !== 'function') return Promise.resolve(point);
+		var endpoint = String(config.pointDetailsEndpoint).replace(/\/$/, '') + '/' + encodeURIComponent(point.id) + '/details';
+		return window.fetch(endpoint, {
+			credentials: 'same-origin',
+			headers: config.nonce ? { 'X-WP-Nonce': config.nonce } : {}
+		}).then(function (response) {
+			return response.ok ? response.json() : point;
+		}).then(function (full) {
+			return full && full.id ? Object.assign({}, point, full) : point;
+		}).catch(function () { return point; });
 	}
 
 	function showNotice(message) {

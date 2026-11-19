@@ -1351,8 +1351,18 @@
 		var mode = nativeEditValue(panel, 'inmov_location_mode');
 		var selected = mode ? mode.value : 'keep';
 		var hint = panel.querySelector('[data-edit-location="map"]');
-		if (hint) hint.hidden = selected !== 'map';
+		if (hint) {
+			hint.hidden = selected !== 'map';
+			if (selected === 'map') {
+				hint.textContent = window.matchMedia && window.matchMedia('(max-width: 767px)').matches
+					? 'Toque no mapa acima para definir a nova posição do ponto.'
+					: 'Clique no mapa à direita para definir a nova posição do ponto.';
+			}
+		}
 		if (map) map.__inmovFtthEditSelecting = selected === 'map';
+		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
+		if (host && host.classList) host.classList.toggle('inmov-ftth-map-shell--edit-location-map', selected === 'map');
+		if (map && typeof map.resize === 'function') window.requestAnimationFrame(function () { map.resize(); });
 	}
 
 	function reverseNativeEditLocation(panel, coordinates) {
@@ -1489,6 +1499,7 @@
 		panel.setAttribute('aria-hidden', 'false');
 		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
 		if (host && host.classList) host.classList.add('inmov-ftth-map-shell--edit-open');
+		if (map && typeof map.resize === 'function') window.requestAnimationFrame(function () { map.resize(); });
 		return true;
 	}
 

@@ -478,10 +478,12 @@
 
 @media(max-width:767px){
  .inmov-ftth-map-edit-panel{right:0;bottom:0;left:0;width:100%;max-height:70vh;border-right:0;border-bottom:0;border-left:0;border-radius:22px 22px 0 0;box-shadow:0 -12px 40px rgba(15,23,42,.24)}
+ .inmov-ftth-map-shell--edit-location-map .inmov-ftth-map-edit-panel:not(.is-expanded){max-height:58vh}
  .inmov-ftth-map-edit-panel.is-expanded{max-height:calc(100% - 12px)}
  .inmov-ftth-map-edit-panel__head{padding-right:16px;padding-left:16px}.inmov-ftth-map-edit-panel__form{padding-right:16px;padding-left:16px}.inmov-ftth-map-edit-panel__footer{margin-right:-16px;margin-left:-16px;padding-right:16px;padding-left:16px}
  .inmov-ftth-map-edit-panel__grid{grid-template-columns:1fr}.inmov-ftth-map-edit-panel__coordinates{grid-template-columns:1fr 1fr}
 }
+.inmov-ftth-map-shell--edit-location-map .mapboxgl-canvas{cursor:crosshair!important}
 @media(max-width:767px){
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__head{padding:7px 22px 14px;font-size:19px}
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body{padding:16px 18px calc(28px + env(safe-area-inset-bottom))}

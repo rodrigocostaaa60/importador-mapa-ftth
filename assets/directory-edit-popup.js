@@ -121,16 +121,82 @@
 		try { mapInput.setValue(); } catch (error) {}
 	}
 
-	function setMapReactiveLocation(form, value) {
-		if (!form || !form.getAttribute) return;
+	function mapInputFor(form) {
+		if (!form || !form.getAttribute) return null;
 		var formId = text(form.getAttribute('data-form-id'));
 		var registry = window.JetFormBuilder;
 		var instance = formId && registry ? registry[formId] : null;
-		var mapInput = instance && instance.dataInputs ? instance.dataInputs.ponto_localizacao : null;
+		return instance && instance.dataInputs ? instance.dataInputs.ponto_localizacao : null;
+	}
+
+	function setMapReactiveLocation(form, value) {
+		var mapInput = mapInputFor(form);
 		if (!mapInput) return;
 		var node = mapInput.nodes && mapInput.nodes[0];
 		if (node) node.value = String(value || '');
 		refreshMapReactiveValue(form);
+	}
+
+	function centerMapInstance(form, coordinates) {
+		var mapInput = mapInputFor(form);
+		var callable = mapInput && mapInput.callable;
+		var map = callable && callable.map;
+		if (!map || !coordinates) return false;
+		var center = { lng: coordinates.lng, lat: coordinates.lat };
+		var zoom = Number(mapInput.fieldSettings && mapInput.fieldSettings.zoom) || 14;
+		try {
+			if (typeof map.resize === 'function') map.resize();
+			if (typeof map.jumpTo === 'function') map.jumpTo({ center: center, zoom: zoom });
+			if (callable.marker && typeof callable.marker.setLngLat === 'function') {
+				callable.marker.setLngLat([coordinates.lng, coordinates.lat]);
+			}
+			return true;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	function stopMapClickWatch(form) {
+		var map = form && form.__inmovFtthMapClickMap;
+		var handler = form && form.__inmovFtthMapClickHandler;
+		if (map && handler && typeof map.off === 'function') {
+			try { map.off('click', handler); } catch (error) {}
+		}
+		if (form) {
+			form.__inmovFtthMapClickMap = null;
+			form.__inmovFtthMapClickHandler = null;
+		}
+	}
+
+	function startMapClickWatch(form) {
+		var mapInput = mapInputFor(form);
+		var map = mapInput && mapInput.callable && mapInput.callable.map;
+		if (!map || typeof map.on !== 'function') return false;
+		if (form.__inmovFtthMapClickMap === map && form.__inmovFtthMapClickHandler) return true;
+		stopMapClickWatch(form);
+		var handler = function () { window.setTimeout(function () { syncMapLocation(form); }, 0); };
+		map.on('click', handler);
+		form.__inmovFtthMapClickMap = map;
+		form.__inmovFtthMapClickHandler = handler;
+		return true;
+	}
+
+	function scheduleMapCenter(form, coordinates) {
+		if (!form || !coordinates) return;
+		if (form.__inmovFtthMapCenterTimer) window.clearInterval(form.__inmovFtthMapCenterTimer);
+		var checks = 0;
+		form.__inmovFtthMapCenterTimer = window.setInterval(function () {
+			if (!form.isConnected || ++checks > 30) {
+				window.clearInterval(form.__inmovFtthMapCenterTimer);
+				form.__inmovFtthMapCenterTimer = null;
+				return;
+			}
+			if (centerMapInstance(form, coordinates)) {
+				startMapClickWatch(form);
+				window.clearInterval(form.__inmovFtthMapCenterTimer);
+				form.__inmovFtthMapCenterTimer = null;
+			}
+		}, 100);
 	}
 
 	function validCoordinates(point) {
@@ -177,6 +243,7 @@
 		if (hashField && !hashField.value) hashField.value = value;
 		var preview = mapField.querySelector('.jet-fb-map-field__position');
 		if (preview) preview.textContent = coordinates.lat + ', ' + coordinates.lng;
+		scheduleMapCenter(form, coordinates);
 		return !!valueField;
 	}
 
@@ -242,10 +309,7 @@
 		};
 		var startMapValueWatch = function () {
 			stopMapValueWatch();
-			var formId = text(form.getAttribute('data-form-id'));
-			var registry = window.JetFormBuilder;
-			var instance = formId && registry ? registry[formId] : null;
-			var mapInput = instance && instance.dataInputs ? instance.dataInputs.ponto_localizacao : null;
+			var mapInput = mapInputFor(form);
 			if (!mapInput || !mapInput.value || typeof mapInput.value.watch !== 'function') return;
 			form.__inmovFtthMapValueUnwatch = mapInput.value.watch(function () { syncMapLocation(form); });
 		};
@@ -298,6 +362,7 @@
 			if (event.target.value === 'keep') {
 				stopLocationWatch();
 				stopMapValueWatch();
+				stopMapClickWatch(form);
 				if (form.__inmovFtthLocationObserver) {
 					form.__inmovFtthLocationObserver.disconnect();
 					form.__inmovFtthLocationObserver = null;
@@ -352,6 +417,11 @@
 		form.__inmovFtthLocationSeeded = false;
 		form.__inmovFtthLastCoordinates = validCoordinates(point);
 		form.__inmovFtthMapPositionChanged = false;
+		stopMapClickWatch(form);
+		if (form.__inmovFtthMapCenterTimer) {
+			window.clearInterval(form.__inmovFtthMapCenterTimer);
+			form.__inmovFtthMapCenterTimer = null;
+		}
 		if (typeof form.__inmovFtthMapValueUnwatch === 'function') {
 			try { form.__inmovFtthMapValueUnwatch(); } catch (error) {}
 			form.__inmovFtthMapValueUnwatch = null;
@@ -488,6 +558,11 @@
 						if (typeof form.__inmovFtthMapValueUnwatch === 'function') {
 							try { form.__inmovFtthMapValueUnwatch(); } catch (error) {}
 							form.__inmovFtthMapValueUnwatch = null;
+						}
+						stopMapClickWatch(form);
+						if (form.__inmovFtthMapCenterTimer) {
+							window.clearInterval(form.__inmovFtthMapCenterTimer);
+							form.__inmovFtthMapCenterTimer = null;
 						}
 					});
 				});

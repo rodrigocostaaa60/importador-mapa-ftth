@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.90
+ * Version: 0.10.91
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.90';
+	const VERSION               = '0.10.91';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -987,7 +987,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		);
 		$response = wp_remote_get( $url, array(
 			'timeout' => 8,
-			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.90 (WordPress reverse geocoder)' ),
+			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.91 (WordPress reverse geocoder)' ),
 		) );
 		if ( is_wp_error( $response ) ) {
 			return rest_ensure_response( array( 'found' => false, 'locality' => '', 'address' => '' ) );
@@ -1044,10 +1044,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
 		$row   = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE _ID = %d AND cct_status = %s AND ponto_status <> %s LIMIT 1",
+				"SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE _ID = %d AND cct_status = %s LIMIT 1",
 				$id,
-				'publish',
-				'inativo'
+				'publish'
 			),
 			ARRAY_A
 		);

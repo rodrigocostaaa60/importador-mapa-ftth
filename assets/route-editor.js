@@ -147,6 +147,30 @@
         setField('rota_codigo', 'IMP-R-' + hashString(fingerprint) + hashString(fingerprint + '|route').slice(0, 2));
     }
 
+    function routeIdFromUrl() {
+        var params = new URLSearchParams(window.location.search || '');
+        return params.get('inmov_item_id') || params.get('route_id') || params.get('inserted_cct_rotas_fibra') || '';
+    }
+
+    /**
+     * JetFormBuilder can resolve a hidden field default against the page that
+     * contains the form. On the public create page that value is the page ID,
+     * not a route/CCT ID, so it must never be submitted as route data.
+     */
+    function normalizeRouteSubmissionFields(isEditing) {
+        setField('jetengine_custom_content_type', 'rotas_fibra');
+        setField('jetformbuilder_form_name', '3700');
+        if (isEditing) return;
+        setField('inmov_item_id', '');
+        setField('_inmov_item_id', '');
+        setField('rota_codigo', '');
+        setField('rota_cor_mapa', '');
+        setField('rota_ponto_inicio_codigo', '');
+        setField('rota_ponto_fim_codigo', '');
+        setField('rota_geometria_geojson', '');
+        setField('rota_comprimento_metros', '');
+    }
+
     function updateLocalityFromFirstPoint(keepExisting) {
         if (!coordinates.length || !config.reverseGeocodeEndpoint || typeof window.fetch !== 'function') {
             if (!coordinates.length && !keepExisting) setField('rota_localidade', '');
@@ -188,6 +212,20 @@
         element.setAttribute('aria-label', 'Vértice ' + (index + 1));
         element.textContent = String(index + 1);
         element.addEventListener('click', function (event) { if (event) event.stopPropagation(); });
+        /* Prevent iOS/Android from treating a vertex drag as page scrolling.
+         * Mapbox still receives the gesture and moves the marker normally. */
+        element.addEventListener('touchstart', function (event) {
+            if (event && event.preventDefault) event.preventDefault();
+            if (event && event.stopPropagation) event.stopPropagation();
+            setDraggingState(true);
+        }, { passive: false });
+        element.addEventListener('pointerdown', function (event) {
+            if (event && event.pointerType === 'touch') {
+                if (event.preventDefault) event.preventDefault();
+                if (event.stopPropagation) event.stopPropagation();
+                setDraggingState(true);
+            }
+        }, { passive: false });
         return element;
     }
 
@@ -377,8 +415,8 @@
             map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } });
             map.addLayer({ id: lineLayerId, type: 'line', source: sourceId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': config.lineColor || '#2563eb', 'line-width': 5, 'line-opacity': 0.95 } });
             refreshEditor();
-            var params = new URLSearchParams(window.location.search || '');
-            var id = params.get('inmov_item_id') || params.get('route_id') || params.get('inserted_cct_rotas_fibra') || '';
+            var id = routeIdFromUrl();
+            normalizeRouteSubmissionFields(!!id);
             if (!id) {
                 setField('inmov_item_id', '');
                 setField('_inmov_item_id', '');
@@ -425,6 +463,7 @@
                 setStatus('Desenhe pelo menos dois pontos para salvar a rota.', 'error');
                 return;
             }
+            normalizeRouteSubmissionFields(!!routeIdFromUrl());
             ensureRouteCode();
             syncFields();
         }, true);

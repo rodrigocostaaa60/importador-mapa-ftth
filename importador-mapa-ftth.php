@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.05
+ * Version: 0.11.06
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.05';
+	const VERSION               = '0.11.06';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -918,8 +918,19 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 		$id = absint( $request['_inmov_item_id'] ?? $request['inmov_item_id'] ?? 0 );
 		$code = sanitize_text_field( $request['rota_codigo'] ?? '' );
-		if ( '' === $code ) {
+		/* A page ID can arrive from a misconfigured hidden JFB default. It is not
+		 * a valid generated route code, so generate the same IMP-R format used by
+		 * the KML/KMZ importer whenever a new route has no real code. */
+		if ( ! $id && ( '' === $code || ctype_digit( $code ) ) ) {
 			$code = 'IMP-R-' . strtoupper( substr( hash( 'sha256', wp_json_encode( $coordinates ) . '|' . microtime( true ) ), 0, 10 ) );
+		}
+		$start_code = sanitize_text_field( $request['rota_ponto_inicio_codigo'] ?? '' );
+		$end_code   = sanitize_text_field( $request['rota_ponto_fim_codigo'] ?? '' );
+		if ( ctype_digit( $start_code ) ) {
+			$start_code = '';
+		}
+		if ( ctype_digit( $end_code ) ) {
+			$end_code = '';
 		}
 		$status = sanitize_key( $request['rota_status'] ?? 'planejada' );
 		$allowed_statuses = array( 'nativa', 'planejada', 'ativa', 'ativo', 'em_implantacao', 'manutencao', 'inativa' );
@@ -935,8 +946,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'rota_quantidade_fibras'   => max( 0, absint( $request['rota_quantidade_fibras'] ?? 0 ) ),
 			'rota_status'              => $status,
 			'rota_cor_mapa'            => sanitize_hex_color( $request['rota_cor_mapa'] ?? '' ) ?: '',
-			'rota_ponto_inicio_codigo' => sanitize_text_field( $request['rota_ponto_inicio_codigo'] ?? '' ),
-			'rota_ponto_fim_codigo'    => sanitize_text_field( $request['rota_ponto_fim_codigo'] ?? '' ),
+			'rota_ponto_inicio_codigo' => $start_code,
+			'rota_ponto_fim_codigo'    => $end_code,
 			'rota_geometria_geojson'   => wp_json_encode( array( 'type' => 'LineString', 'coordinates' => $coordinates ) ),
 			'rota_comprimento_metros'  => max( 0, absint( $request['rota_comprimento_metros'] ?? 0 ) ),
 			'rota_observacao'          => sanitize_textarea_field( $request['rota_observacao'] ?? '' ),

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.01
+ * Version: 0.11.02
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.01';
+	const VERSION               = '0.11.02';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -1108,9 +1108,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$sql = $wpdb->prepare(
 			"SELECT _ID, cct_author_id, cct_created, cct_modified, rota_codigo, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_ponto_inicio_codigo, rota_ponto_fim_codigo, rota_comprimento_metros, rota_geometria_geojson, rota_observacao
 			FROM {$table}
-			WHERE cct_status = %s AND rota_status IN (%s, %s, %s)
+			WHERE cct_status = %s AND rota_status IN (%s, %s, %s, %s)
 			ORDER BY _ID ASC LIMIT 3000",
-			'publish', 'nativa', 'em_implantacao', 'manutencao'
+			'publish', 'nativa', 'ativa', 'em_implantacao', 'manutencao'
 		);
 		$rows = $wpdb->get_results( $sql, ARRAY_A );
 		$features = array();

@@ -34,15 +34,18 @@
  * width and make every field wrap vertically. Keep the grid stretched. */
 @media (min-width: 768px) {
 	body.elementor-page-3714 #ftth-points,
-	body.elementor-page-3759 #ftth-points {
+	body.elementor-page-3759 #ftth-points,
+	body.elementor-page-3759 #ftth-points-category {
 		align-self: stretch !important;
 		width: 100% !important;
 		max-width: none !important;
 	}
 	body.elementor-page-3714 #ftth-points > .jet-listing-grid,
 	body.elementor-page-3759 #ftth-points > .jet-listing-grid,
+	body.elementor-page-3759 #ftth-points-category > .jet-listing-grid,
 	body.elementor-page-3714 #ftth-points .jet-listing-grid__items,
-	body.elementor-page-3759 #ftth-points .jet-listing-grid__items {
+	body.elementor-page-3759 #ftth-points .jet-listing-grid__items,
+	body.elementor-page-3759 #ftth-points-category .jet-listing-grid__items {
 		width: 100% !important;
 		max-width: none !important;
 	}

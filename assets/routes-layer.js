@@ -1575,11 +1575,13 @@
 		sheet.dataset.itemCode = options.code || '';
 		var editAction = sheet.querySelector('[data-sheet-action="edit"]');
 		var isPoint = (options.kind || 'point') === 'point';
+		var isRoute = (options.kind || 'point') === 'route';
+		var canEditItem = isPoint ? canEditPoints() : (isRoute && config.canEditRoutes === true);
 		if (editAction) {
-			editAction.classList.toggle('is-hidden', !isPoint);
-			editAction.classList.toggle('is-disabled', isPoint && !canEditPoints());
-			editAction.setAttribute('aria-disabled', isPoint && !canEditPoints() ? 'true' : 'false');
-			editAction.title = isPoint && !canEditPoints() ? 'Seu usuário não tem permissão para editar pontos' : 'Editar ponto';
+			editAction.classList.toggle('is-hidden', !isPoint && !isRoute);
+			editAction.classList.toggle('is-disabled', (isPoint || isRoute) && !canEditItem);
+			editAction.setAttribute('aria-disabled', (isPoint || isRoute) && !canEditItem ? 'true' : 'false');
+			editAction.title = !canEditItem ? 'Seu usuário não tem permissão para editar este item' : (isRoute ? 'Editar rota' : 'Editar ponto');
 		}
 		hideEditPermissionNotice(sheet);
 		sheetSetText(sheet, '.inmov-ftth-map-sheet__type', visual.label);
@@ -2415,6 +2417,16 @@
 		if (routeButton && routeButton.addEventListener) routeButton.addEventListener('click', function () { openGoogleMapsRoute(sheet.__inmovFtthRouteCenter || []); });
 			var editButton = sheet.querySelector('[data-sheet-action="edit"]');
 		if (editButton && editButton.addEventListener) editButton.addEventListener('click', function (event) {
+			if (sheet.dataset.itemKind === 'route') {
+				if (event && event.preventDefault) event.preventDefault();
+				if (event && event.stopPropagation) event.stopPropagation();
+				if (config.canEditRoutes !== true) return;
+				var routeId = sheet.dataset.itemId || sheet.dataset.itemCode || '';
+				if (!routeId || !config.routeEditUrl) return;
+				var separator = config.routeEditUrl.indexOf('?') >= 0 ? '&' : '?';
+				window.location.href = config.routeEditUrl + separator + 'inmov_item_id=' + encodeURIComponent(routeId);
+				return;
+			}
 			var point = sheet.dataset.itemKind === 'point' ? pointRecords[sheet.dataset.itemId] : null;
 			if (!point) return;
 			if (event && event.preventDefault) event.preventDefault();

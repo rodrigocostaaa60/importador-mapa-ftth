@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.00
+ * Version: 0.11.01
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.00';
+	const VERSION               = '0.11.01';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -305,6 +305,14 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'callback'            => array( $this, 'get_routes_geojson' ),
 			)
 		);
+		register_rest_route( 'inmov-ftth/v1', '/routes/(?P<id>\\d+)', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
+			'args'                => array(
+				'id' => array( 'required' => true, 'validate_callback' => function( $value ) { return (int) $value > 0; } ),
+			),
+			'callback'            => array( $this, 'get_route_details' ),
+		) );
 		register_rest_route( 'inmov-ftth/v1', '/points', array(
 			'methods' => WP_REST_Server::READABLE,
 			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
@@ -1098,7 +1106,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		}
 
 		$sql = $wpdb->prepare(
-			"SELECT _ID, cct_author_id, cct_created, cct_modified, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_comprimento_metros, rota_geometria_geojson
+			"SELECT _ID, cct_author_id, cct_created, cct_modified, rota_codigo, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_ponto_inicio_codigo, rota_ponto_fim_codigo, rota_comprimento_metros, rota_geometria_geojson, rota_observacao
 			FROM {$table}
 			WHERE cct_status = %s AND rota_status IN (%s, %s, %s)
 			ORDER BY _ID ASC LIMIT 3000",
@@ -1142,6 +1150,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'id'         => (int) $row['_ID'],
 				'geometry'   => array( 'type' => 'LineString', 'coordinates' => $coordinates ),
 				'properties' => array(
+					'code'        => (string) $row['rota_codigo'],
 					'name'        => (string) $row['rota_nome'],
 					'locality'    => (string) $row['rota_localidade'],
 					'routeType'   => (string) $row['rota_tipo'],
@@ -1149,6 +1158,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 					'fibers'      => (int) $row['rota_quantidade_fibras'],
 					'status'      => (string) $row['rota_status'],
 					'lengthM'     => (int) $row['rota_comprimento_metros'],
+					'startCode'   => (string) $row['rota_ponto_inicio_codigo'],
+					'endCode'     => (string) $row['rota_ponto_fim_codigo'],
+					'observation' => (string) $row['rota_observacao'],
 					'updatedAt'   => $audit['date'],
 					'updatedBy'   => $audit['user'],
 					'color'       => $color ?: '#f97316',
@@ -1159,6 +1171,70 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$response = rest_ensure_response( array( 'type' => 'FeatureCollection', 'features' => $features ) );
 		$response->header( 'Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0' );
 		return $response;
+	}
+
+	/** Return one route with all editable CCT fields for the visual editor. */
+	public function get_route_details( WP_REST_Request $request ) {
+		global $wpdb;
+		$id    = absint( $request->get_param( 'id' ) );
+		$table = $wpdb->prefix . 'jet_cct_rotas_fibra';
+		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) );
+		if ( $table !== $found ) {
+			return new WP_Error( 'inmov_ftth_routes_unavailable', 'A base de rotas do JetEngine não está disponível.', array( 'status' => 503 ) );
+		}
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT _ID, cct_author_id, cct_created, cct_modified, cct_status, rota_codigo, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_ponto_inicio_codigo, rota_ponto_fim_codigo, rota_comprimento_metros, rota_geometria_geojson, rota_observacao
+			FROM {$table} WHERE _ID = %d AND (cct_status = 'publish' OR cct_status IS NULL OR cct_status = '') LIMIT 1",
+			$id
+		), ARRAY_A );
+		if ( ! is_array( $row ) ) {
+			return new WP_Error( 'inmov_ftth_route_not_found', 'Rota não encontrada.', array( 'status' => 404 ) );
+		}
+
+		$geometry = json_decode( (string) $row['rota_geometria_geojson'], true );
+		if ( ! is_array( $geometry ) || 'LineString' !== ( $geometry['type'] ?? '' ) || empty( $geometry['coordinates'] ) ) {
+			return new WP_Error( 'inmov_ftth_route_geometry_invalid', 'A rota não possui uma geometria LineString válida.', array( 'status' => 422 ) );
+		}
+		$coordinates = array();
+		foreach ( $geometry['coordinates'] as $coordinate ) {
+			if ( ! is_array( $coordinate ) || count( $coordinate ) < 2 ) {
+				continue;
+			}
+			$lng = (float) $coordinate[0];
+			$lat = (float) $coordinate[1];
+			if ( ! is_finite( $lng ) || ! is_finite( $lat ) || abs( $lng ) > 180 || abs( $lat ) > 90 ) {
+				continue;
+			}
+			$coordinates[] = array( $lng, $lat );
+		}
+		if ( count( $coordinates ) < 2 ) {
+			return new WP_Error( 'inmov_ftth_route_geometry_invalid', 'A rota não possui dois vértices válidos.', array( 'status' => 422 ) );
+		}
+
+		$audit = $this->cct_audit_data( $row['cct_modified'] ?? '', $row['cct_created'] ?? '', $row['cct_author_id'] ?? 0 );
+		$color = sanitize_hex_color( $row['rota_cor_mapa'] );
+		return rest_ensure_response( array(
+			'type'       => 'Feature',
+			'id'         => (int) $row['_ID'],
+			'geometry'   => array( 'type' => 'LineString', 'coordinates' => $coordinates ),
+			'properties' => array(
+				'code'        => (string) $row['rota_codigo'],
+				'name'        => (string) $row['rota_nome'],
+				'locality'    => (string) $row['rota_localidade'],
+				'routeType'   => (string) $row['rota_tipo'],
+				'cableType'   => (string) $row['rota_tipo_cabo'],
+				'fibers'      => (int) $row['rota_quantidade_fibras'],
+				'status'      => (string) $row['rota_status'],
+				'color'       => $color ?: '#f97316',
+				'startCode'   => (string) $row['rota_ponto_inicio_codigo'],
+				'endCode'     => (string) $row['rota_ponto_fim_codigo'],
+				'lengthM'     => (int) $row['rota_comprimento_metros'],
+				'observation' => (string) $row['rota_observacao'],
+				'updatedAt'   => $audit['date'],
+				'updatedBy'   => $audit['user'],
+			),
+		) );
 	}
 
 	/** Declare the provider dependency before WordPress prints the native map scripts. */
@@ -1185,6 +1261,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 	/** Add the route line layer to the existing JetEngine Mapbox map on the FTTH page. */
 	public function enqueue_map_routes_layer() {
 		$this->enqueue_notifications_ui();
+		$this->enqueue_route_editor();
 		if ( ! is_page( 3600 ) && ! is_page( 'mapa-da-rede-ftth' ) ) {
 			return;
 		}
@@ -1210,7 +1287,46 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'editPopupId' => 3701,
 				'editFormId' => 3699,
 				'canEditPoints' => $this->can_edit_points(),
+				'canEditRoutes' => $this->can_edit_points(),
+				'routeEditUrl' => esc_url_raw( home_url( '/cadastrar-rota-de-fibra-ftth/' ) ),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
+			)
+		);
+	}
+
+	/** Add the visual LineString editor to the native JetFormBuilder route form. */
+	private function enqueue_route_editor() {
+		if ( ! is_page( 'cadastrar-rota-de-fibra-ftth' ) ) {
+			return;
+		}
+
+		/* JetEngine registers Mapbox globally on the frontend when its maps module
+		 * is active. Enqueueing the handles here makes the editor work on the form
+		 * page even though it does not contain a JetEngine map widget. */
+		wp_enqueue_style( 'jet-mapbox' );
+		wp_enqueue_script( 'jet-mapbox' );
+		wp_enqueue_script(
+			'inmov-ftth-route-editor',
+			plugin_dir_url( __FILE__ ) . 'assets/route-editor.js',
+			array(),
+			self::VERSION,
+			true
+		);
+		wp_enqueue_style(
+			'inmov-ftth-route-editor',
+			plugin_dir_url( __FILE__ ) . 'assets/route-editor.css',
+			array( 'jet-mapbox' ),
+			self::VERSION
+		);
+		wp_localize_script(
+			'inmov-ftth-route-editor',
+			'InmovFtthRouteEditor',
+			array(
+				'routeDetailsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes/' ) ),
+				'nonce'               => wp_create_nonce( 'wp_rest' ),
+				'style'               => 'mapbox://styles/mapbox/outdoors-v12',
+				'center'              => array( -39.965351, -13.524918 ),
+				'zoom'                => 12.7,
 			)
 		);
 	}

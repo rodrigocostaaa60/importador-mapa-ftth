@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.10.88
+ * Version: 0.10.89
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.10.88';
+	const VERSION               = '0.10.89';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -888,8 +888,20 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 		$location_mode = sanitize_key( $params['inmov_location_mode'] ?? 'keep' );
 		if ( in_array( $location_mode, array( 'coordinates', 'map' ), true ) ) {
-			$lat = isset( $params['ponto_latitude'] ) ? (float) $params['ponto_latitude'] : null;
-			$lng = isset( $params['ponto_longitude'] ) ? (float) $params['ponto_longitude'] : null;
+			/* The updated JetFormBuilder form intentionally exposes only the map
+			 * field. Accept its `lat,lng` value as the source of truth, while still
+			 * supporting the old hidden latitude/longitude inputs when present. */
+			$map_coordinates = array();
+			$location_value  = is_scalar( $params['ponto_localizacao'] ?? null ) ? trim( (string) $params['ponto_localizacao'] ) : '';
+			if ( '' !== $location_value ) {
+				$map_coordinates = array_map( 'trim', explode( ',', $location_value, 2 ) );
+			}
+			$lat = isset( $params['ponto_latitude'] ) && '' !== trim( (string) $params['ponto_latitude'] )
+				? (float) $params['ponto_latitude']
+				: ( isset( $map_coordinates[0] ) && is_numeric( $map_coordinates[0] ) ? (float) $map_coordinates[0] : null );
+			$lng = isset( $params['ponto_longitude'] ) && '' !== trim( (string) $params['ponto_longitude'] )
+				? (float) $params['ponto_longitude']
+				: ( isset( $map_coordinates[1] ) && is_numeric( $map_coordinates[1] ) ? (float) $map_coordinates[1] : null );
 			if ( null === $lat || null === $lng || ! is_finite( $lat ) || ! is_finite( $lng ) || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 ) {
 				return new WP_Error( 'inmov_ftth_invalid_coordinates', 'Informe latitude e longitude válidas.', array( 'status' => 400 ) );
 			}
@@ -975,7 +987,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		);
 		$response = wp_remote_get( $url, array(
 			'timeout' => 8,
-			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.88 (WordPress reverse geocoder)' ),
+			'headers' => array( 'User-Agent' => 'InmovFTTH/0.10.89 (WordPress reverse geocoder)' ),
 		) );
 		if ( is_wp_error( $response ) ) {
 			return rest_ensure_response( array( 'found' => false, 'locality' => '', 'address' => '' ) );

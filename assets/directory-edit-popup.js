@@ -113,20 +113,32 @@
 		return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180 ? { lat: lat, lng: lng } : null;
 	}
 
-	function applyMapDefaults(form, point) {
+	function applyMapDefaults(form, point, preserveExistingMapPosition) {
 		var coordinates = validCoordinates(point);
 		if (!form || !coordinates) return false;
-		setField(form, 'ponto_latitude', coordinates.lat);
-		setField(form, 'ponto_longitude', coordinates.lng);
-		setField(form, 'ponto_localizacao', coordinates.lat + ',' + coordinates.lng);
-
 		var mapField = form.querySelector && form.querySelector('.jet-fb-map-field');
-		if (!mapField) return false;
-		var valueField = mapField.querySelector('input[name="ponto_localizacao"], input:not([data-map-field])');
-		var hashField = mapField.querySelector('[data-map-field="hash"]');
-		var latField = mapField.querySelector('[data-map-field="lat"]');
-		var lngField = mapField.querySelector('[data-map-field="lng"]');
+		var valueField = mapField && mapField.querySelector('input[name="ponto_localizacao"], input:not([data-map-field])');
+		var hashField = mapField && mapField.querySelector('[data-map-field="hash"]');
+		var latField = mapField && mapField.querySelector('[data-map-field="lat"]');
+		var lngField = mapField && mapField.querySelector('[data-map-field="lng"]');
 		var value = coordinates.lat + ',' + coordinates.lng;
+		/* The map field is conditionally rendered. When it first appears, seed
+		 * it with the original point. If it already contains a real coordinate,
+		 * keep that value so a quick user click is never overwritten by the
+		 * asynchronous conditional-field render. */
+		if (preserveExistingMapPosition && valueField) {
+			var existingParts = text(valueField.value).split(',').map(function (item) { return Number(String(item).trim()); });
+			var existingLat = existingParts.length === 2 ? existingParts[0] : NaN;
+			var existingLng = existingParts.length === 2 ? existingParts[1] : NaN;
+			if (Number.isFinite(existingLat) && Number.isFinite(existingLng) &&
+				(existingLat !== 0 || existingLng !== 0) && existingLat >= -90 && existingLat <= 90 && existingLng >= -180 && existingLng <= 180) {
+				value = existingLat + ',' + existingLng;
+			}
+		}
+		setField(form, 'ponto_latitude', value.split(',')[0]);
+		setField(form, 'ponto_longitude', value.split(',')[1]);
+		setField(form, 'ponto_localizacao', value);
+		if (!mapField) return false;
 		if (valueField) {
 			if (String(valueField.value || '') !== value) {
 				valueField.value = value;
@@ -204,6 +216,9 @@
 					stopLocationWatch();
 					return;
 				}
+				if (!form.__inmovFtthLocationSeeded) {
+					form.__inmovFtthLocationSeeded = applyMapDefaults(form, form.__inmovFtthPoint, true);
+				}
 				syncMapLocation(form);
 			}, 250);
 		};
@@ -217,9 +232,11 @@
 			if (!event.target || event.target.name !== 'inmov_location_mode') return;
 			if (event.target.value === 'keep') {
 				stopLocationWatch();
+				form.__inmovFtthLocationSeeded = false;
 				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
-				applyMapDefaults(form, form.__inmovFtthPoint);
+				applyMapDefaults(form, form.__inmovFtthPoint, false);
 			} else {
+				form.__inmovFtthLocationSeeded = false;
 				startLocationWatch();
 				window.setTimeout(syncMapLocation, 0, form);
 			}
@@ -229,7 +246,7 @@
 		 * a bounded period instead of observing the complete form subtree forever. */
 		var readyChecks = 0;
 		var readyTimer = window.setInterval(function () {
-			if (form.__inmovFtthLocationSeeded || !form.isConnected || ++readyChecks > 40) {
+				if (form.__inmovFtthLocationSeeded || !form.isConnected || ++readyChecks > 40) {
 				window.clearInterval(readyTimer);
 				return;
 			}

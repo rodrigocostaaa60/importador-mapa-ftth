@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.03
+ * Version: 0.11.04
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.03';
+	const VERSION               = '0.11.04';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -42,6 +42,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 		 * missing action for form 3699. */
 		add_action( 'init', array( $this, 'configure_jfb_point_form' ), 20 );
 		add_action( 'jet-form-builder/custom-action/inmov_ftth_update_point', array( $this, 'handle_jfb_point_update' ), 10, 2 );
+		add_action( 'init', array( $this, 'configure_jfb_route_form' ), 21 );
+		add_action( 'jet-form-builder/custom-action/inmov_ftth_upsert_route', array( $this, 'handle_jfb_route_upsert' ), 10, 2 );
 		add_action( 'jet-engine/query-builder/query/after-query-setup', array( $this, 'apply_points_directory_url_filters' ), 20 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_directory_cards' ) );
@@ -805,6 +807,172 @@ final class Inmov_JetEngine_FTTH_Importer {
 	}
 
 	/**
+	 * Use a single idempotent JFB Call Hook for route create/edit submissions.
+	 *
+	 * The generic CCT action treats an empty item id as an update on some
+	 * JetEngine/JFB combinations, which produces "You trying to update not
+	 * existing item" when the visual editor is used to create a new route.
+	 * Keeping the action inside JetFormBuilder while handling the CCT write here
+	 * gives us an unambiguous insert-vs-update decision.
+	 */
+	public function configure_jfb_route_form() {
+		if ( ! is_admin() && ! wp_doing_ajax() ) {
+			return;
+		}
+		if ( ! function_exists( 'jet_form_builder' ) && ! class_exists( 'Jet_Form_Builder\\Plugin' ) ) {
+			return;
+		}
+
+		$form_id = 3700;
+		if ( ! get_post( $form_id ) ) {
+			return;
+		}
+		$raw_actions = get_post_meta( $form_id, '_jf_actions', true );
+		$actions     = array();
+		if ( is_array( $raw_actions ) ) {
+			$actions = $raw_actions;
+		} elseif ( is_string( $raw_actions ) && '' !== trim( $raw_actions ) ) {
+			$decoded = json_decode( $raw_actions, true );
+			if ( is_array( $decoded ) ) {
+				$actions = $decoded;
+			}
+		}
+
+		$filtered = array();
+		$has_route_hook = false;
+		foreach ( $actions as $action ) {
+			if ( ! is_array( $action ) ) {
+				$filtered[] = $action;
+				continue;
+			}
+			$settings = $action['settings'] ?? array();
+			if ( isset( $settings['call_hook'] ) && is_array( $settings['call_hook'] ) ) {
+				$settings = $settings['call_hook'];
+			}
+			$hook_name = (string) ( $settings['hook_name'] ?? '' );
+			$editor_name = (string) ( $action['editor_name'] ?? '' );
+			if ( 'inmov_ftth_upsert_route' === $hook_name ) {
+				$has_route_hook = true;
+				$filtered[] = $action;
+				continue;
+			}
+			/* Remove only the generic route CCT action; keep unrelated JFB actions
+			 * such as Save Form Record and redirect. */
+			if ( false !== stripos( $editor_name, 'Insert/Update Custom Content Type Item' ) || false !== stripos( $editor_name, 'Trechos e Rotas de Fibra' ) ) {
+				continue;
+			}
+			$filtered[] = $action;
+		}
+
+		if ( ! $has_route_hook ) {
+			$filtered[] = array(
+				'id'          => 0,
+				'type'        => 'call_hook',
+				'settings'    => array( 'call_hook' => array( 'hook_name' => 'inmov_ftth_upsert_route' ) ),
+				'events'      => array( 'DEFAULT.PROCESS' ),
+				'is_execute'  => true,
+				'editor_name' => 'Salvar rota no CCT rotas_fibra',
+			);
+		}
+
+		$encoded_before = is_string( $raw_actions ) ? $raw_actions : wp_json_encode( $raw_actions );
+		$encoded_after  = wp_json_encode( $filtered );
+		if ( $encoded_before !== $encoded_after ) {
+			update_post_meta( $form_id, '_jf_actions', $encoded_after );
+		}
+	}
+
+	/** Persist a route submitted through the visual JetFormBuilder editor. */
+	public function handle_jfb_route_upsert( $request, $action_handler = null ) {
+		if ( ! is_array( $request ) ) {
+			$request = array();
+		}
+		if ( ! $this->can_edit_points() ) {
+			$this->throw_jfb_action_error( 'Você não tem permissão para cadastrar ou editar rotas da rede.' );
+			return;
+		}
+
+		$geometry_raw = $request['rota_geometria_geojson'] ?? '';
+		$geometry = is_array( $geometry_raw ) ? $geometry_raw : json_decode( wp_unslash( (string) $geometry_raw ), true );
+		if ( ! is_array( $geometry ) || 'LineString' !== ( $geometry['type'] ?? '' ) || empty( $geometry['coordinates'] ) || count( $geometry['coordinates'] ) < 2 ) {
+			$this->throw_jfb_action_error( 'Desenhe pelo menos dois pontos para salvar a rota.' );
+			return;
+		}
+		$coordinates = array();
+		foreach ( $geometry['coordinates'] as $coordinate ) {
+			if ( ! is_array( $coordinate ) || count( $coordinate ) < 2 || ! is_numeric( $coordinate[0] ) || ! is_numeric( $coordinate[1] ) ) {
+				continue;
+			}
+			$lng = (float) $coordinate[0];
+			$lat = (float) $coordinate[1];
+			if ( abs( $lng ) > 180 || abs( $lat ) > 90 ) {
+				continue;
+			}
+			$coordinates[] = array( $lng, $lat );
+		}
+		if ( count( $coordinates ) < 2 ) {
+			$this->throw_jfb_action_error( 'A geometria da rota não possui dois pontos válidos.' );
+			return;
+		}
+
+		$id = absint( $request['_inmov_item_id'] ?? $request['inmov_item_id'] ?? 0 );
+		$code = sanitize_text_field( $request['rota_codigo'] ?? '' );
+		if ( '' === $code ) {
+			$code = 'IMP-R-' . strtoupper( substr( hash( 'sha256', wp_json_encode( $coordinates ) . '|' . microtime( true ) ), 0, 10 ) );
+		}
+		$status = sanitize_key( $request['rota_status'] ?? 'planejada' );
+		$allowed_statuses = array( 'nativa', 'planejada', 'ativa', 'ativo', 'em_implantacao', 'manutencao', 'inativa' );
+		if ( ! in_array( $status, $allowed_statuses, true ) ) {
+			$status = 'planejada';
+		}
+		$data = array(
+			'rota_codigo'              => $code,
+			'rota_nome'                => sanitize_text_field( $request['rota_nome'] ?? '' ),
+			'rota_localidade'          => sanitize_text_field( $request['rota_localidade'] ?? '' ),
+			'rota_tipo'                => sanitize_key( $request['rota_tipo'] ?? 'outro' ),
+			'rota_tipo_cabo'           => sanitize_text_field( $request['rota_tipo_cabo'] ?? '' ),
+			'rota_quantidade_fibras'   => max( 0, absint( $request['rota_quantidade_fibras'] ?? 0 ) ),
+			'rota_status'              => $status,
+			'rota_cor_mapa'            => sanitize_hex_color( $request['rota_cor_mapa'] ?? '' ) ?: '',
+			'rota_ponto_inicio_codigo' => sanitize_text_field( $request['rota_ponto_inicio_codigo'] ?? '' ),
+			'rota_ponto_fim_codigo'    => sanitize_text_field( $request['rota_ponto_fim_codigo'] ?? '' ),
+			'rota_geometria_geojson'   => wp_json_encode( array( 'type' => 'LineString', 'coordinates' => $coordinates ) ),
+			'rota_comprimento_metros'  => max( 0, absint( $request['rota_comprimento_metros'] ?? 0 ) ),
+			'rota_observacao'          => sanitize_textarea_field( $request['rota_observacao'] ?? '' ),
+		);
+		if ( '' === $data['rota_nome'] || '' === $data['rota_localidade'] ) {
+			$this->throw_jfb_action_error( 'Preencha o nome e a localidade da rota.' );
+			return;
+		}
+		if ( $id ) {
+			$data['_ID'] = $id;
+		}
+
+		$type = $this->cct_type( 'rotas_fibra' );
+		if ( ! $type || ! method_exists( $type, 'get_item_handler' ) ) {
+			$this->throw_jfb_action_error( 'O CCT de rotas de fibra não está disponível.' );
+			return;
+		}
+		try {
+			$saved_id = $type->get_item_handler()->update_item( $data );
+		} catch ( Throwable $error ) {
+			$this->throw_jfb_action_error( 'Não foi possível salvar a rota: ' . $error->getMessage() );
+			return;
+		}
+		if ( is_wp_error( $saved_id ) || ! $saved_id ) {
+			$this->throw_jfb_action_error( 'O JetEngine não confirmou a gravação da rota.' );
+			return;
+		}
+		$verify_id = absint( $saved_id );
+		global $wpdb;
+		$table = $wpdb->prefix . 'jet_cct_rotas_fibra';
+		$exists = $wpdb->get_var( $wpdb->prepare( "SELECT _ID FROM {$table} WHERE _ID = %d LIMIT 1", $verify_id ) );
+		if ( ! $exists ) {
+			$this->throw_jfb_action_error( 'A rota não foi encontrada após a gravação.' );
+		}
+	}
+
+	/**
 	 * Handle the JetFormBuilder post-submit action for the point editor.
 	 *
 	 * The hidden `_inmov_item_id` field identifies the existing CCT item. The
@@ -995,7 +1163,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 		);
 		$response = wp_remote_get( $url, array(
 			'timeout' => 8,
-			'headers' => array( 'User-Agent' => 'InmovFTTH/0.11.03 (WordPress reverse geocoder)' ),
+			'headers' => array( 'User-Agent' => 'InmovFTTH/' . self::VERSION . ' (WordPress reverse geocoder)' ),
 		) );
 		if ( is_wp_error( $response ) ) {
 			return rest_ensure_response( array( 'found' => false, 'locality' => '', 'address' => '' ) );
@@ -1328,6 +1496,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 				'style'               => 'mapbox://styles/mapbox/outdoors-v12',
 				'center'              => array( -39.965351, -13.524918 ),
 				'zoom'                => 12.7,
+				'autoLocate'          => true,
 			)
 		);
 	}

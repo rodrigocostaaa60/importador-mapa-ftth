@@ -12,6 +12,9 @@
     var coordinates = [];
     var drawing = true;
     var geocodeToken = 0;
+    var editorHost;
+    var userLocationMarker;
+    var locationRequestPending = false;
 
     function qs(selector, root) { return (root || document).querySelector(selector); }
 
@@ -168,6 +171,16 @@
         vertexMarkers = [];
     }
 
+    function isCoarsePointer() {
+        return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    }
+
+    function setDraggingState(active) {
+        if (!isCoarsePointer()) return;
+        if (editorHost) editorHost.classList.toggle('inmov-ftth-route-editor--dragging', !!active);
+        if (document.documentElement) document.documentElement.classList.toggle('inmov-ftth-route-dragging', !!active);
+    }
+
     function makeVertexElement(index) {
         var element = document.createElement('button');
         element.type = 'button';
@@ -198,7 +211,12 @@
                 refreshSource();
                 syncFields();
             });
+            marker.on('dragstart', function () {
+                setDraggingState(true);
+                setStatus('Ajustando o vértice ' + (index + 1) + '…', 'info');
+            });
             marker.on('dragend', function () {
+                setDraggingState(false);
                 if (index === 0) updateLocalityFromFirstPoint(true);
                 setStatus('Vértice ajustado. Arraste outros pontos ou finalize o traçado.', 'success');
                 refreshMarkers();
@@ -219,6 +237,38 @@
         var bounds = new window.mapboxgl.LngLatBounds();
         coordinates.forEach(function (pair) { bounds.extend(pair); });
         map.fitBounds(bounds, { padding: 64, maxZoom: 17, duration: 450, essential: true });
+    }
+
+    function showUserLocation(position, shouldCenter) {
+        if (!map || !position || !window.mapboxgl) return;
+        var point = [Number(position.coords.longitude), Number(position.coords.latitude)];
+        if (!validCoordinate(point)) return;
+        if (userLocationMarker) {
+            userLocationMarker.setLngLat(point);
+        } else {
+            var element = document.createElement('span');
+            element.className = 'inmov-ftth-route-editor__user-location';
+            element.setAttribute('aria-hidden', 'true');
+            userLocationMarker = new window.mapboxgl.Marker({ element: element, anchor: 'center' }).setLngLat(point).addTo(map);
+        }
+        if (shouldCenter !== false) map.flyTo({ center: point, zoom: Math.max(Number(map.getZoom ? map.getZoom() : 14), 15), duration: 500, essential: true });
+        setStatus('Localização atual encontrada. Você pode desenhar a rota nesta área.', 'success');
+    }
+
+    function locateUser(shouldCenter) {
+        if (!navigator.geolocation || locationRequestPending) {
+            if (!navigator.geolocation) setStatus('Este dispositivo não disponibilizou a localização. Mova o mapa manualmente.', 'error');
+            return;
+        }
+        locationRequestPending = true;
+        setStatus('Buscando sua localização…', 'info');
+        navigator.geolocation.getCurrentPosition(function (position) {
+            locationRequestPending = false;
+            showUserLocation(position, shouldCenter !== false);
+        }, function () {
+            locationRequestPending = false;
+            setStatus('Não foi possível acessar sua localização. Verifique a permissão do navegador ou mova o mapa manualmente.', 'error');
+        }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
     }
 
     function setCoordinates(next, message) {
@@ -272,7 +322,7 @@
         host.className = 'inmov-ftth-route-editor';
         host.innerHTML = '<div class="inmov-ftth-route-editor__header"><div><span class="inmov-ftth-route-editor__eyebrow">Editor visual</span><h2>Defina o trajeto da fibra</h2><p>Clique no mapa para adicionar pontos ao percurso. Depois, arraste os marcadores para ajustar o caminho.</p></div><span class="inmov-ftth-route-editor__mode" data-route-editor-mode>Modo de desenho ativo</span></div>' +
             '<div class="inmov-ftth-route-editor__map" data-route-editor-map></div>' +
-            '<div class="inmov-ftth-route-editor__toolbar"><button type="button" data-route-editor-action="undo">Desfazer</button><button type="button" data-route-editor-action="clear">Limpar desenho</button><button type="button" data-route-editor-action="fit">Enquadrar rota</button><button type="button" class="is-primary" data-route-editor-action="finish">Concluir desenho</button></div>' +
+            '<div class="inmov-ftth-route-editor__toolbar"><button type="button" data-route-editor-action="locate">Minha localização</button><button type="button" data-route-editor-action="undo">Desfazer</button><button type="button" data-route-editor-action="clear">Limpar desenho</button><button type="button" data-route-editor-action="fit">Enquadrar rota</button><button type="button" class="is-primary" data-route-editor-action="finish">Concluir desenho</button></div>' +
             '<div class="inmov-ftth-route-editor__footer"><span data-route-editor-status>Clique no mapa para iniciar o desenho.</span><span class="inmov-ftth-route-editor__length" data-route-editor-length>Comprimento estimado: —</span></div>';
         if (row && row.parentNode) row.parentNode.insertBefore(host, row);
         else geometryField.parentNode.insertBefore(host, geometryField);
@@ -321,7 +371,7 @@
         var mapNode = qs('[data-route-editor-map]', host);
         if (!mapNode || !window.mapboxgl || !window.JetEngineMapboxData) return;
         window.mapboxgl.accessToken = window.JetEngineMapboxData.token;
-        map = new window.mapboxgl.Map({ container: mapNode, style: config.style || 'mapbox://styles/mapbox/outdoors-v12', center: config.center || [-39.965351, -13.524918], zoom: Number(config.zoom || 12.7), attributionControl: true, cooperativeGestures: true });
+        map = new window.mapboxgl.Map({ container: mapNode, style: config.style || 'mapbox://styles/mapbox/outdoors-v12', center: config.center || [-39.965351, -13.524918], zoom: Number(config.zoom || 12.7), attributionControl: true, cooperativeGestures: true, locale: { 'ScrollZoomBlocker.CtrlMessage': 'Use Ctrl + rolagem para aproximar o mapa', 'ScrollZoomBlocker.Message': 'Use Ctrl + rolagem para aproximar o mapa', 'TouchPanBlocker.Message': 'Use dois dedos para mover o mapa' } });
         map.addControl(new window.mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
         map.on('load', function () {
             map.addSource(sourceId, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } });
@@ -329,6 +379,10 @@
             refreshEditor();
             var params = new URLSearchParams(window.location.search || '');
             var id = params.get('inmov_item_id') || params.get('route_id') || params.get('inserted_cct_rotas_fibra') || '';
+            if (!id) {
+                setField('inmov_item_id', '');
+                setField('_inmov_item_id', '');
+            }
             var currentGeometry = normalizeCoordinates(field('rota_geometria_geojson') && field('rota_geometria_geojson').value);
             if (id) {
                 setStatus('Carregando rota selecionada…', 'info');
@@ -336,6 +390,7 @@
             } else if (currentGeometry.length) {
                 setCoordinates(currentGeometry, 'Geometria carregada. Você pode ajustar o traçado pelos vértices.');
             }
+            if (config.autoLocate !== false && !id && !currentGeometry.length) window.setTimeout(function () { locateUser(true); }, 250);
         });
         map.on('click', function (event) { addCoordinate(event && event.lngLat); });
     }
@@ -352,6 +407,7 @@
         if (!form || !field('rota_geometria_geojson') || document.querySelector('.inmov-ftth-route-editor')) return;
         var geometryField = field('rota_geometria_geojson');
         var host = addEditorMarkup(geometryField);
+        editorHost = host;
         stateNode = qs('[data-route-editor-status]', host);
         modeNode = qs('[data-route-editor-mode]', host);
         finishButton = qs('[data-route-editor-action="finish"]', host);
@@ -361,6 +417,7 @@
         qs('[data-route-editor-action="undo"]', host).addEventListener('click', undo);
         qs('[data-route-editor-action="clear"]', host).addEventListener('click', clear);
         qs('[data-route-editor-action="fit"]', host).addEventListener('click', fitCoordinates);
+        qs('[data-route-editor-action="locate"]', host).addEventListener('click', function () { locateUser(true); });
         finishButton.addEventListener('click', finish);
         form.addEventListener('submit', function (event) {
             if (coordinates.length < 2) {

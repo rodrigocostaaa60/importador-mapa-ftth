@@ -120,6 +120,30 @@
         if (clearButton) clearButton.disabled = coordinates.length === 0;
     }
 
+    /* JetFormBuilder's Save Form Record action intentionally omits controls
+     * whose native type is `hidden`. The visual editor therefore keeps the
+     * GeoJSON in a visually-hidden text control while the form is submitted,
+     * and also writes it directly into FormData for AJAX submissions. This
+     * preserves the invisible field for users without losing the geometry. */
+    function prepareGeometryFieldForSubmission() {
+        var geometry = field('rota_geometria_geojson');
+        if (!geometry) return;
+        if (String(geometry.type || '').toLowerCase() === 'hidden') geometry.type = 'text';
+        geometry.classList.add('inmov-ftth-route-geometry-submit-field');
+        geometry.setAttribute('aria-hidden', 'true');
+        geometry.tabIndex = -1;
+        geometry.style.position = 'absolute';
+        geometry.style.width = '1px';
+        geometry.style.height = '1px';
+        geometry.style.padding = '0';
+        geometry.style.margin = '-1px';
+        geometry.style.border = '0';
+        geometry.style.clip = 'rect(0 0 0 0)';
+        geometry.style.clipPath = 'inset(50%)';
+        geometry.style.overflow = 'hidden';
+        geometry.style.whiteSpace = 'nowrap';
+    }
+
     function setStatus(message, type) {
         if (!stateNode) return;
         stateNode.textContent = message;
@@ -465,7 +489,14 @@
             normalizeRouteSubmissionFields(!!routeIdFromUrl());
             ensureRouteCode();
             syncFields();
+            prepareGeometryFieldForSubmission();
         }, true);
+        form.addEventListener('formdata', function (event) {
+            if (!event || !event.formData || coordinates.length < 2) return;
+            event.formData.set('rota_geometria_geojson', geometryValue());
+            event.formData.set('rota_comprimento_metros', String(calculateLength()));
+            prepareGeometryFieldForSubmission();
+        });
         geometryField.addEventListener('input', function () {
             var parsed = normalizeCoordinates(geometryField.value);
             if (JSON.stringify(parsed) !== JSON.stringify(coordinates)) { coordinates = parsed; refreshEditor(); }

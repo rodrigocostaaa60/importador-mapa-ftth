@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.07
+ * Version: 0.11.08
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.07';
+	const VERSION               = '0.11.08';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -44,6 +44,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 		add_action( 'jet-form-builder/custom-action/inmov_ftth_update_point', array( $this, 'handle_jfb_point_update' ), 10, 2 );
 		add_action( 'init', array( $this, 'configure_jfb_route_form' ), 21 );
 		add_action( 'jet-form-builder/custom-action/inmov_ftth_upsert_route', array( $this, 'handle_jfb_route_upsert' ), 10, 2 );
+		add_action( 'init', array( $this, 'configure_jfb_point_create_form' ), 22 );
+		add_action( 'jet-form-builder/custom-action/inmov_ftth_point_created', array( $this, 'handle_jfb_point_created' ), 10, 2 );
 		add_action( 'jet-engine/query-builder/query/after-query-setup', array( $this, 'apply_points_directory_url_filters' ), 20 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_map_routes_layer' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_directory_cards' ) );
@@ -523,6 +525,113 @@ final class Inmov_JetEngine_FTTH_Importer {
 		return $values;
 	}
 
+	/**
+	 * Create the success notice used by the existing frontend notification UI.
+	 *
+	 * This is intentionally best-effort: a notification outage must never turn a
+	 * successfully saved point or route into a failed form submission.
+	 */
+	private function create_map_item_success_notification( $kind, $item_id, $record, $created = true ) {
+		$user_id = get_current_user_id();
+		$item_id = absint( $item_id );
+		if ( ! $user_id || ! $item_id || ! is_array( $record ) ) {
+			return 0;
+		}
+
+		$is_route = 'route' === $kind;
+		$prefix   = $is_route ? 'rota_' : 'ponto_';
+		$code     = sanitize_text_field( $record[ $prefix . 'codigo' ] ?? $record['code'] ?? '' );
+		$name     = sanitize_text_field( $record[ $prefix . 'nome' ] ?? $record['name'] ?? $code ?: ( $is_route ? 'rota de fibra' : 'ponto da rede' ) );
+		$locality = sanitize_text_field( $record[ $prefix . 'localidade' ] ?? $record['locality'] ?? '' );
+		$label    = $name;
+		if ( $code && false === stripos( $label, $code ) ) {
+			$label .= ' (' . $code . ')';
+		}
+		if ( $locality ) {
+			$label .= ' — ' . $locality;
+		}
+
+		$object_type = $is_route ? 'rotas_fibra' : 'pontos_rede_ftth';
+		$focus_key   = $is_route ? 'focus_route' : 'focus_point';
+		$map_url     = add_query_arg( $focus_key, $code ?: $item_id, home_url( '/mapa-da-rede-ftth/' ) );
+		$title       = $is_route
+			? ( $created ? 'Rota criada com sucesso' : 'Rota atualizada com sucesso' )
+			: ( $created ? 'Ponto criado com sucesso' : 'Ponto atualizado com sucesso' );
+		$message     = $is_route
+			? sprintf( 'A rota “%s” foi %s com sucesso e já está disponível no mapa.', $label, $created ? 'criada' : 'atualizada' )
+			: sprintf( 'O ponto “%s” foi %s com sucesso e já está disponível no mapa.', $label, $created ? 'criado' : 'atualizado' );
+		$created_at  = current_time( 'Y-m-d\\TH:i' );
+		$dedupe_key  = 'inmov_ftth_saved_notice_' . $user_id . '_' . $object_type . '_' . $item_id . '_' . md5( $title . '|' . $created_at );
+		if ( get_transient( $dedupe_key ) ) {
+			return 0;
+		}
+
+		$data = array(
+			'notificacao_titulo'        => $title,
+			'notificacao_mensagem'      => $message,
+			'notificacao_tipo'          => 'sucesso',
+			'notificacao_prioridade'    => 'normal',
+			'notificacao_destino_tipo'  => 'usuario',
+			'notificacao_usuarios_ids'  => ',' . $user_id . ',',
+			'notificacao_setores_ids'   => '',
+			'notificacao_perfis'        => '',
+			'notificacao_objeto_tipo'   => $object_type,
+			'notificacao_objeto_id'     => $item_id,
+			'notificacao_url'           => esc_url_raw( $map_url ),
+			'notificacao_criada_por'    => $user_id,
+			'notificacao_criada_em'     => $created_at,
+			'notificacao_expira_em'     => '1970-01-01T00:00',
+			'notificacao_status'        => 'ativa',
+			'notificacao_dispensavel'   => '1',
+			'notificacao_exige_ciencia' => '0',
+		);
+
+		try {
+			$notification_id = $this->insert_notification_cct( $data );
+		} catch ( Throwable $error ) {
+			return 0;
+		}
+		if ( ! $notification_id ) {
+			return 0;
+		}
+		set_transient( $dedupe_key, 1, 30 );
+		return (int) $notification_id;
+	}
+
+	/** Persist a notification through JetEngine, with a narrow SQL fallback. */
+	private function insert_notification_cct( $data ) {
+		$type = $this->cct_type( 'pj_notificacoes' );
+		if ( $type && method_exists( $type, 'get_item_handler' ) ) {
+			try {
+				$id = $type->get_item_handler()->update_item( $data );
+				if ( ! is_wp_error( $id ) && $id ) {
+					return (int) $id;
+				}
+			} catch ( Throwable $error ) {
+				/* Continue to the compatibility insert below. */
+			}
+		}
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'jet_cct_pj_notificacoes';
+		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) );
+		if ( $table !== $found ) {
+			return 0;
+		}
+		$now    = time();
+		$fields = array_merge(
+			array(
+				'cct_status'    => 'publish',
+				'cct_author_id' => get_current_user_id(),
+				'cct_created'   => $now,
+				'cct_modified'  => $now,
+			),
+			$data
+		);
+		$result = $wpdb->insert( $table, $fields );
+		return false === $result ? 0 : (int) $wpdb->insert_id;
+	}
+
 	/** Mark one notification as read in the JetEngine readings CCT. */
 	public function mark_notification_read( WP_REST_Request $request ) {
 		$id = absint( $request->get_param( 'notification_id' ) );
@@ -807,6 +916,68 @@ final class Inmov_JetEngine_FTTH_Importer {
 	}
 
 	/**
+	 * Add a success hook after the point creation CCT action.
+	 *
+	 * Form 3631 already creates the CCT item correctly. The hook is deliberately
+	 * added after that action so it only creates a notification once the item id
+	 * exists, without replacing JetFormBuilder's own insert/redirect workflow.
+	 */
+	public function configure_jfb_point_create_form() {
+		if ( ! is_admin() && ! wp_doing_ajax() ) {
+			return;
+		}
+		if ( ! function_exists( 'jet_form_builder' ) && ! class_exists( 'Jet_Form_Builder\\Plugin' ) ) {
+			return;
+		}
+
+		$form_id = 3631;
+		if ( ! get_post( $form_id ) ) {
+			return;
+		}
+		$raw_actions = get_post_meta( $form_id, '_jf_actions', true );
+		$actions     = array();
+		if ( is_array( $raw_actions ) ) {
+			$actions = $raw_actions;
+		} elseif ( is_string( $raw_actions ) && '' !== trim( $raw_actions ) ) {
+			$decoded = json_decode( $raw_actions, true );
+			if ( is_array( $decoded ) ) {
+				$actions = $decoded;
+			}
+		}
+
+		foreach ( $actions as $action ) {
+			if ( ! is_array( $action ) || 'call_hook' !== ( $action['type'] ?? '' ) ) {
+				continue;
+			}
+			$settings = $action['settings'] ?? array();
+			if ( isset( $settings['call_hook'] ) && is_array( $settings['call_hook'] ) ) {
+				$settings = $settings['call_hook'];
+			}
+			if ( 'inmov_ftth_point_created' === ( $settings['hook_name'] ?? '' ) ) {
+				return;
+			}
+		}
+
+		$hook_action = array(
+			'id'          => 0,
+			'type'        => 'call_hook',
+			'settings'    => array( 'call_hook' => array( 'hook_name' => 'inmov_ftth_point_created' ) ),
+			'events'      => array( 'DEFAULT.PROCESS' ),
+			'is_execute'  => true,
+			'editor_name' => 'Notificar criação do ponto no mapa',
+		);
+		$insert_at = count( $actions );
+		foreach ( $actions as $index => $action ) {
+			if ( is_array( $action ) && 'redirect_to_page' === ( $action['type'] ?? '' ) ) {
+				$insert_at = $index;
+				break;
+			}
+		}
+		array_splice( $actions, $insert_at, 0, array( $hook_action ) );
+		update_post_meta( $form_id, '_jf_actions', wp_json_encode( $actions ) );
+	}
+
+	/**
 	 * Use a single idempotent JFB Call Hook for route create/edit submissions.
 	 *
 	 * The generic CCT action treats an empty item id as an update on some
@@ -916,7 +1087,8 @@ final class Inmov_JetEngine_FTTH_Importer {
 			return;
 		}
 
-		$id = absint( $request['_inmov_item_id'] ?? $request['inmov_item_id'] ?? 0 );
+		$id     = absint( $request['_inmov_item_id'] ?? $request['inmov_item_id'] ?? 0 );
+		$is_new = ! $id;
 		$code = sanitize_text_field( $request['rota_codigo'] ?? '' );
 		/* A page ID can arrive from a misconfigured hidden JFB default. It is not
 		 * a valid generated route code, so generate the same IMP-R format used by
@@ -989,6 +1161,28 @@ final class Inmov_JetEngine_FTTH_Importer {
 		if ( ! $exists ) {
 			$this->throw_jfb_action_error( 'A rota não foi encontrada após a gravação.' );
 		}
+		$this->create_map_item_success_notification( 'route', $verify_id, $data, $is_new );
+	}
+
+	/** Notify the creator after JetFormBuilder's point CCT insert succeeds. */
+	public function handle_jfb_point_created( $request, $action_handler = null ) {
+		if ( ! is_array( $request ) || ! is_user_logged_in() ) {
+			return;
+		}
+		$item_id = absint( $request['inserted_cct_pontos_rede_ftth'] ?? $request['_ID'] ?? $request['point_id'] ?? 0 );
+		global $wpdb;
+		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
+		$row   = false;
+		if ( $item_id ) {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT _ID, ponto_codigo, ponto_nome, ponto_localidade FROM {$table} WHERE _ID = %d LIMIT 1", $item_id ), ARRAY_A );
+		}
+		if ( ! is_array( $row ) && ! empty( $request['ponto_codigo'] ) ) {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT _ID, ponto_codigo, ponto_nome, ponto_localidade FROM {$table} WHERE ponto_codigo = %s ORDER BY _ID DESC LIMIT 1", sanitize_text_field( $request['ponto_codigo'] ) ), ARRAY_A );
+		}
+		if ( ! is_array( $row ) ) {
+			return;
+		}
+		$this->create_map_item_success_notification( 'point', absint( $row['_ID'] ), $row, true );
 	}
 
 	/** Compatibility persistence for JetEngine versions that reject a blank CCT id. */
@@ -1186,6 +1380,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			ARRAY_A
 		);
 		$updated = is_array( $updated_row ) ? $this->format_point_record( $updated_row ) : null;
+		$this->create_map_item_success_notification( 'point', $id, $data, false );
 		return rest_ensure_response( array( 'updated' => true, 'point' => $updated ) );
 	}
 

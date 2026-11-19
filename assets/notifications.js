@@ -132,6 +132,7 @@
 	var previewTimer = null;
 	var previewItem = null;
 	var announcedIds = {};
+	var pageLoadedAt = Date.now();
 	var audioContext = null;
 	var urgentAudioTimer = null;
 	var urgentAlertItem = null;
@@ -344,6 +345,18 @@
 
 	function itemDate(item) {
 		return item && (item.created_at_display || (item.created_at ? formatDate(item.created_at) : ''));
+	}
+
+	function isRecentNotification(item) {
+		if (!item || !item.created_at) return false;
+		var raw = String(item.created_at).trim();
+		var date = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?/.test(raw)
+			? new Date(raw.replace(' ', 'T'))
+			: new Date(raw);
+		if (isNaN(date.getTime())) return false;
+		/* A page reload caused by a successful JFB submission should announce the
+		 * new item once, but an old unread backlog must remain badge-only. */
+		return Math.abs(pageLoadedAt - date.getTime()) <= 30000 || (date.getTime() <= pageLoadedAt && pageLoadedAt - date.getTime() <= 30000);
 	}
 
 	function hasActionLink(item) {
@@ -632,7 +645,9 @@
 			updateBadge(data.unread || items.filter(function (item) { return !item.read; }).length);
 			render();
 			syncUrgentAlert();
-			if (wasLoaded) {
+			if (!wasLoaded) {
+				nextItems.filter(function (item) { return item && !item.read && isRecentNotification(item); }).slice().reverse().forEach(announce);
+			} else {
 				nextItems.filter(function (item) { return item && !item.read && item.id && !previousIds[String(item.id)]; }).slice().reverse().forEach(announce);
 			}
 		}).catch(function () {

@@ -1769,6 +1769,33 @@
 		}, 80);
 	}
 
+	function focusRequestedRoute(map) {
+		if ( ! map || ! window.URLSearchParams || ! window.location || map.__inmovFtthRequestedRouteFocused || ! routeData || ! Array.isArray( routeData.features ) ) return;
+		var requestedId = new window.URLSearchParams( window.location.search || '' ).get( 'focus_route' );
+		if ( ! requestedId ) return;
+		var requestedRoute = routeData.features.find( function( feature ) {
+			var props = feature && feature.properties ? feature.properties : {};
+			return String( feature && feature.id !== undefined ? feature.id : '' ) === String( requestedId ) || String( props.code || '' ).trim() === String( requestedId ).trim();
+		} );
+		if ( ! requestedRoute || ! requestedRoute.geometry || ! Array.isArray( requestedRoute.geometry.coordinates ) || ! requestedRoute.geometry.coordinates.length ) return;
+		var coordinates = requestedRoute.geometry.coordinates.filter( function( pair ) { return Array.isArray( pair ) && pair.length >= 2; } );
+		if ( ! coordinates.length ) return;
+		map.__inmovFtthRequestedRouteFocused = true;
+		window.setTimeout( function() {
+			if ( coordinates.length === 1 ) {
+				focusMapCoordinate( map, coordinates[0], getDetailZoom( map, coordinates[0][1] ), { duration: 450 } );
+				return;
+			}
+			if ( window.mapboxgl && typeof window.mapboxgl.LngLatBounds === 'function' && typeof map.fitBounds === 'function' ) {
+				var bounds = new window.mapboxgl.LngLatBounds();
+				coordinates.forEach( function( pair ) { bounds.extend( pair ); } );
+				map.fitBounds( bounds, { padding: 90, maxZoom: 16, duration: 500, essential: true } );
+				return;
+			}
+			focusMapCoordinate( map, coordinates[0], getDetailZoom( map, coordinates[0][1] ), { duration: 450 } );
+		}, 80 );
+	}
+
 	function createMapLegend(container) {
 		var parent = container && container.parentNode;
 		if (!parent || typeof parent.querySelector !== 'function' || typeof parent.insertBefore !== 'function' || parent.querySelector('.inmov-ftth-map-legend')) return;
@@ -2468,6 +2495,7 @@
 			var refreshFailed = false;
 			var routeRequest = fetchRoutes().then(function (data) {
 				if (data && map.getSource && map.getSource(sourceId) && map.getSource(sourceId).setData) map.getSource(sourceId).setData(data);
+				focusRequestedRoute(map);
 				refreshOpenSheet(map);
 				var inventory = container.parentNode && container.parentNode.querySelector ? container.parentNode.querySelector('.inmov-ftth-map-inventory-panel') : null;
 				if (inventory && typeof inventory.__inmovFtthRefresh === 'function') inventory.__inmovFtthRefresh();
@@ -2485,6 +2513,7 @@
 						updateMarkerVisibility(map);
 						render();
 						focusRequestedPoint(map);
+						focusRequestedRoute(map);
 						refreshOpenSheet(map);
 						var inventory = container.parentNode && container.parentNode.querySelector ? container.parentNode.querySelector('.inmov-ftth-map-inventory-panel') : null;
 						if (inventory && typeof inventory.__inmovFtthRefresh === 'function') inventory.__inmovFtthRefresh();
@@ -2508,6 +2537,7 @@
 						updateMarkerVisibility(map);
 						render();
 						focusRequestedPoint(map);
+						focusRequestedRoute(map);
 						refreshOpenSheet(map);
 						var inventory = container.parentNode && container.parentNode.querySelector ? container.parentNode.querySelector('.inmov-ftth-map-inventory-panel') : null;
 						if (inventory && typeof inventory.__inmovFtthRefresh === 'function') inventory.__inmovFtthRefresh();

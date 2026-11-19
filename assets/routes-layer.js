@@ -1262,7 +1262,16 @@
 	 * site, but it must not own this action: its document-level overlay can keep
 	 * an invisible layer above Mapbox and its form is not wired to the point CCT. */
 	function nativeEditValue(panel, name) {
-		return panel && panel.querySelector ? panel.querySelector('[name="' + name + '"]') : null;
+		if (!panel || !panel.querySelector) return null;
+		if (name === 'inmov_location_mode') return panel.querySelector('[name="' + name + '"]:checked') || panel.querySelector('[name="' + name + '"]');
+		return panel.querySelector('[name="' + name + '"]');
+	}
+
+	function setNativeEditMode(panel, value) {
+		if (!panel || !panel.querySelectorAll) return;
+		Array.prototype.forEach.call(panel.querySelectorAll('[name="inmov_location_mode"]'), function (radio) {
+			radio.checked = String(radio.value) === String(value);
+		});
 	}
 
 	function closeNativeEditPanel(map) {
@@ -1341,9 +1350,7 @@
 	function updateNativeEditLocationMode(panel, map) {
 		var mode = nativeEditValue(panel, 'inmov_location_mode');
 		var selected = mode ? mode.value : 'keep';
-		var coords = panel.querySelector('[data-edit-location="coordinates"]');
 		var hint = panel.querySelector('[data-edit-location="map"]');
-		if (coords) coords.hidden = selected !== 'coordinates' && selected !== 'map';
 		if (hint) hint.hidden = selected !== 'map';
 		if (map) map.__inmovFtthEditSelecting = selected === 'map';
 	}
@@ -1389,12 +1396,8 @@
 			'</div>' +
 			'<fieldset><legend>Localização *</legend><div class="inmov-ftth-map-edit-panel__location-options">' +
 			'<label><input type="radio" name="inmov_location_mode" value="keep" checked><span>Manter posição atual</span></label>' +
-			'<label><input type="radio" name="inmov_location_mode" value="coordinates"><span>Informar coordenadas</span></label>' +
 			'<label><input type="radio" name="inmov_location_mode" value="map"><span>Selecionar no mapa</span></label>' +
-			'</div><div class="inmov-ftth-map-edit-panel__coordinates" data-edit-location="coordinates" hidden>' +
-			'<label><span>Latitude</span><input type="number" name="ponto_latitude" step="0.000001" inputmode="decimal"></label>' +
-			'<label><span>Longitude</span><input type="number" name="ponto_longitude" step="0.000001" inputmode="decimal"></label>' +
-			'</div><p class="inmov-ftth-map-edit-panel__map-hint" data-edit-location="map" hidden>Clique no mapa para definir a nova posição do ponto.</p></fieldset>' +
+			'</div><p class="inmov-ftth-map-edit-panel__map-hint" data-edit-location="map" hidden>Clique no mapa à direita para definir a nova posição do ponto.</p><input type="hidden" name="ponto_latitude"><input type="hidden" name="ponto_longitude"><input type="hidden" name="ponto_localizacao"></fieldset>' +
 			'<label class="is-wide"><span>Observações técnicas</span><textarea name="ponto_observacao" rows="3"></textarea></label>' +
 			'<label class="is-wide"><span>Motivo da alteração *</span><textarea name="inmov_change_reason" rows="2" required placeholder="Explique brevemente o que foi alterado."></textarea></label>' +
 			'<label class="inmov-ftth-map-edit-panel__confirm is-wide"><input type="checkbox" name="inmov_reviewed" value="1" required><span>Confirme que revisou os dados antes de salvar.</span></label>' +
@@ -1415,11 +1418,12 @@
 				if (!map.__inmovFtthEditSelecting || !panel.classList.contains('is-open') || !event || !event.lngLat) return;
 				var lat = nativeEditValue(panel, 'ponto_latitude');
 				var lng = nativeEditValue(panel, 'ponto_longitude');
+				var location = nativeEditValue(panel, 'ponto_localizacao');
 				var coordinates = { lat: Number(event.lngLat.lat), lng: Number(event.lngLat.lng) };
 				if (lat) { lat.value = coordinates.lat.toFixed(6); dispatchEditFieldEvents(lat); }
 				if (lng) { lng.value = coordinates.lng.toFixed(6); dispatchEditFieldEvents(lng); }
-				var mode = nativeEditValue(panel, 'inmov_location_mode');
-				if (mode) mode.value = 'coordinates';
+				if (location) { location.value = coordinates.lat + ',' + coordinates.lng; dispatchEditFieldEvents(location); }
+				setNativeEditMode(panel, 'map');
 				updateNativeEditLocationMode(panel, map);
 				reverseNativeEditLocation(panel, coordinates);
 				var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice');
@@ -1475,7 +1479,8 @@
 		var status = nativeEditValue(panel, 'ponto_status'); if (status) status.value = payload.status || 'nativo';
 		var lat = nativeEditValue(panel, 'ponto_latitude'); if (lat) lat.value = payload.lat === undefined ? '' : payload.lat;
 		var lng = nativeEditValue(panel, 'ponto_longitude'); if (lng) lng.value = payload.lng === undefined ? '' : payload.lng;
-		var mode = nativeEditValue(panel, 'inmov_location_mode'); if (mode) mode.value = 'keep';
+		var location = nativeEditValue(panel, 'ponto_localizacao'); if (location) location.value = payload.lat !== undefined && payload.lng !== undefined ? String(payload.lat) + ',' + String(payload.lng) : '';
+		setNativeEditMode(panel, 'keep');
 		var reason = nativeEditValue(panel, 'inmov_change_reason'); if (reason) reason.value = '';
 		var reviewed = nativeEditValue(panel, 'inmov_reviewed'); if (reviewed) reviewed.checked = false;
 		var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice'); if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice'; notice.textContent = ''; }

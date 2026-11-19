@@ -457,6 +457,12 @@
         form = document.querySelector('form[data-form-id="3700"], form.jet-form-builder');
         if (!form || !field('rota_geometria_geojson') || document.querySelector('.inmov-ftth-route-editor')) return;
         var geometryField = field('rota_geometria_geojson');
+        /* Convert before JetFormBuilder registers its submit/record listeners.
+         * Doing this only in the submit callback is too late on AJAX forms:
+         * JFB may have already built its serialized payload in an earlier
+         * listener. The control remains visually hidden, but is now treated as
+         * a normal field by every JFB action. */
+        prepareGeometryFieldForSubmission();
         var host = addEditorMarkup(geometryField);
         editorHost = host;
         stateNode = qs('[data-route-editor-status]', host);

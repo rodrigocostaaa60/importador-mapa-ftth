@@ -144,6 +144,9 @@
 		var element = marker.getElement();
 		if (!element || !element.classList) return;
 		var visual = pointVisual(point || {});
+		['pop', 'olt', 'cto', 'poste', 'caixa_emenda', 'splitter', 'loja', 'outro'].forEach(function (key) {
+			element.classList.remove('inmov-ftth-point-marker--' + key);
+		});
 		element.classList.add('inmov-ftth-point-marker', 'inmov-ftth-point-marker--' + visual.key);
 		element.style.setProperty('--inmov-point-color', visual.data.color);
 		element.setAttribute('data-point-type', visual.key);
@@ -168,6 +171,20 @@
 			if (item.marker && item.marker._map === map) decoratePointMarker(item.marker, pointRecords[item.id] || {});
 		});
 		updateMarkerVisibility(map);
+	}
+
+	function ensurePointMarkerDecorations(map) {
+		if (!map || !Object.keys(pointRecords).length) return;
+		markerEntriesForMap(map).forEach(function (item) {
+			var marker = item.marker;
+			var point = pointRecords[item.id];
+			if (!marker || marker._map !== map || !point || !marker.getElement) return;
+			var element = marker.getElement();
+			var expectedType = pointVisual(point).key;
+			if (!element || element.getAttribute('data-point-type') !== expectedType || !element.style.getPropertyValue('--inmov-point-color')) {
+				decoratePointMarker(marker, point);
+			}
+		});
 	}
 
 	function updateMarkerVisibility(map, options) {
@@ -1682,6 +1699,7 @@
 			});
 		});
 		if (markerCacheChanged) invalidateMarkerEntries(map);
+		ensurePointMarkerDecorations(map);
 	}
 
 	function markerRecords(container) {
@@ -2874,6 +2892,7 @@
 		record.onStyleLoad = function () {
 			record.rendered = false;
 			record.renderRetryDelay = 1000;
+			ensurePointMarkerDecorations(map);
 			renderRoutes(record);
 		};
 		mapRecords.set(container, record);

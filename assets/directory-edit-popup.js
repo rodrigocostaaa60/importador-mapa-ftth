@@ -84,13 +84,24 @@
 		try { fields = form.querySelectorAll('[name="' + name.replace(/"/g, '\\"') + '"]'); } catch (error) { return; }
 		Array.prototype.forEach.call(fields, function (input) {
 			var normalized = value === undefined || value === null ? '' : String(value);
+			var changed = false;
 			if (input.type === 'radio') {
-				input.checked = String(input.value) === normalized;
+				var checked = String(input.value) === normalized;
+				changed = input.checked !== checked;
+				input.checked = checked;
 			} else if (input.type === 'checkbox') {
-				input.checked = normalized === 'yes' || normalized === '1' || normalized === 'true';
+				var checkedBox = normalized === 'yes' || normalized === '1' || normalized === 'true';
+				changed = input.checked !== checkedBox;
+				input.checked = checkedBox;
 			} else {
+				changed = String(input.value || '') !== normalized;
 				input.value = normalized;
 			}
+			/* JetFormBuilder's map field reacts to change/input by synchronizing
+			 * its Mapbox instance. Do not emit synthetic events when the value is
+			 * already correct; repeated popup opens used to create a feedback loop
+			 * that retained map nodes and drove browser memory into gigabytes. */
+			if (!changed) return;
 			try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (eventError) {}
 			try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (eventError2) {}
 		});
@@ -117,9 +128,11 @@
 		var lngField = mapField.querySelector('[data-map-field="lng"]');
 		var value = coordinates.lat + ',' + coordinates.lng;
 		if (valueField) {
-			valueField.value = value;
-			try { valueField.dispatchEvent(new Event('input', { bubbles: true })); } catch (error) {}
-			try { valueField.dispatchEvent(new Event('change', { bubbles: true })); } catch (error2) {}
+			if (String(valueField.value || '') !== value) {
+				valueField.value = value;
+				try { valueField.dispatchEvent(new Event('input', { bubbles: true })); } catch (error) {}
+				try { valueField.dispatchEvent(new Event('change', { bubbles: true })); } catch (error2) {}
+			}
 		}
 		if (latField) latField.value = String(coordinates.lat);
 		if (lngField) lngField.value = String(coordinates.lng);
@@ -177,6 +190,23 @@
 		form.__inmovFtthLocationDefaultsBound = true;
 		form.__inmovFtthPoint = point;
 		form.__inmovFtthLastCoordinates = validCoordinates(point);
+		var stopLocationWatch = function () {
+			if (form.__inmovFtthLocationWatch) {
+				window.clearInterval(form.__inmovFtthLocationWatch);
+				form.__inmovFtthLocationWatch = null;
+			}
+		};
+		var startLocationWatch = function () {
+			stopLocationWatch();
+			var checks = 0;
+			form.__inmovFtthLocationWatch = window.setInterval(function () {
+				if (!form.isConnected || ++checks > 40) {
+					stopLocationWatch();
+					return;
+				}
+				syncMapLocation(form);
+			}, 250);
+		};
 		var update = function () {
 			if (!form.__inmovFtthLocationSeeded && applyMapDefaults(form, form.__inmovFtthPoint)) {
 				form.__inmovFtthLocationSeeded = true;
@@ -186,22 +216,25 @@
 		form.addEventListener('change', function (event) {
 			if (!event.target || event.target.name !== 'inmov_location_mode') return;
 			if (event.target.value === 'keep') {
+				stopLocationWatch();
 				form.__inmovFtthLastCoordinates = validCoordinates(form.__inmovFtthPoint);
 				applyMapDefaults(form, form.__inmovFtthPoint);
 			} else {
+				startLocationWatch();
 				window.setTimeout(syncMapLocation, 0, form);
 			}
 		});
-		if (typeof MutationObserver === 'function') {
-			form.__inmovFtthLocationObserver = new MutationObserver(update);
-			form.__inmovFtthLocationObserver.observe(form, { childList: true, subtree: true });
-		}
 		update();
-		if (form.__inmovFtthLocationWatch) window.clearInterval(form.__inmovFtthLocationWatch);
-		form.__inmovFtthLocationWatch = window.setInterval(function () {
-			if (!form.isConnected) { window.clearInterval(form.__inmovFtthLocationWatch); form.__inmovFtthLocationWatch = null; return; }
-			syncMapLocation(form);
-		}, 180);
+		/* The map field can render asynchronously inside JetPopup. Retry only for
+		 * a bounded period instead of observing the complete form subtree forever. */
+		var readyChecks = 0;
+		var readyTimer = window.setInterval(function () {
+			if (form.__inmovFtthLocationSeeded || !form.isConnected || ++readyChecks > 40) {
+				window.clearInterval(readyTimer);
+				return;
+			}
+			update();
+		}, 125);
 	}
 
 	function prefillForm(form, point) {
@@ -344,7 +377,18 @@
 			});
 		}, true);
 		if (window.jQuery) {
-			window.jQuery(window).off('jet-popup/show-event/after-show.inmovFtthDirectoryEdit').on('jet-popup/show-event/after-show.inmovFtthDirectoryEdit', function () { schedulePrefill(); });
+			window.jQuery(window)
+				.off('jet-popup/show-event/after-show.inmovFtthDirectoryEdit')
+				.on('jet-popup/show-event/after-show.inmovFtthDirectoryEdit', function () { schedulePrefill(); })
+				.off('jet-popup/hide-event/after-hide.inmovFtthDirectoryEdit')
+				.on('jet-popup/hide-event/after-hide.inmovFtthDirectoryEdit', function () {
+					Array.prototype.forEach.call(document.querySelectorAll('form[data-inmov-ftth-directory-prefilled]'), function (form) {
+						if (form.__inmovFtthLocationWatch) {
+							window.clearInterval(form.__inmovFtthLocationWatch);
+							form.__inmovFtthLocationWatch = null;
+						}
+					});
+				});
 		}
 	}
 

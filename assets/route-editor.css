@@ -3,3 +3,24 @@
 .inmov-ftth-route-editor__vertex{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;margin:0;padding:0;border:2px solid #fff;border-radius:50%;line-height:1;text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap;appearance:none;-webkit-appearance:none}
 .inmov-ftth-route-editor__user-location{display:block;width:18px;height:18px;border:3px solid #fff;border-radius:50%;background:#0ea5e9;box-shadow:0 0 0 7px rgba(14,165,233,.22),0 2px 9px rgba(15,23,42,.3)}
 @media (max-width:1024px){.inmov-ftth-route-editor__map,.inmov-ftth-route-editor__map .mapboxgl-canvas{overscroll-behavior:contain}.inmov-ftth-route-editor__map .mapboxgl-canvas,.inmov-ftth-route-editor__vertex{touch-action:none}.inmov-ftth-route-editor--dragging,.inmov-ftth-route-editor--dragging .inmov-ftth-route-editor__map,.inmov-ftth-route-editor--dragging .mapboxgl-canvas,.inmov-ftth-route-editor--dragging .inmov-ftth-route-editor__vertex{touch-action:none;overscroll-behavior:none}html.inmov-ftth-route-dragging,html.inmov-ftth-route-dragging body{overflow:hidden;overscroll-behavior:none}}
+
+/* Mobile route editor: give the drawing surface room to breathe without
+ * forcing the page into a scroll-locked full-screen overlay. */
+@media (max-width:700px){
+ .inmov-ftth-route-editor{width:100%;max-width:none;min-height:calc(100svh - 20px);margin:8px 0 16px;border-radius:16px;display:flex;flex-direction:column}
+ .inmov-ftth-route-editor__header{flex:0 0 auto}
+ .inmov-ftth-route-editor__map{flex:1 1 auto;height:auto;min-height:52svh}
+ .inmov-ftth-route-editor__toolbar,.inmov-ftth-route-editor__footer{flex:0 0 auto}
+}
+
+/* Keep navigation controls above numbered vertices when their map positions
+ * overlap the control cluster in a narrow viewport. */
+.inmov-ftth-route-editor .mapboxgl-ctrl-top-right{z-index:30!important}
+.inmov-ftth-route-editor .mapboxgl-ctrl-top-right .mapboxgl-ctrl-group{position:relative;z-index:31!important}
+.inmov-ftth-route-editor .mapboxgl-marker{z-index:4}
+
+@media (max-width:1024px){
+ .inmov-ftth-route-editor__map .mapboxgl-canvas{touch-action:pan-y}
+ .inmov-ftth-route-editor__vertex{touch-action:none}
+ .inmov-ftth-route-editor--dragging,.inmov-ftth-route-editor--dragging .inmov-ftth-route-editor__vertex{overscroll-behavior:none}
+}

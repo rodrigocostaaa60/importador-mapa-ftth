@@ -202,7 +202,6 @@
     function setDraggingState(active) {
         if (!isCoarsePointer()) return;
         if (editorHost) editorHost.classList.toggle('inmov-ftth-route-editor--dragging', !!active);
-        if (document.documentElement) document.documentElement.classList.toggle('inmov-ftth-route-dragging', !!active);
     }
 
     function makeVertexElement(index) {
@@ -212,20 +211,10 @@
         element.setAttribute('aria-label', 'Vértice ' + (index + 1));
         element.textContent = String(index + 1);
         element.addEventListener('click', function (event) { if (event) event.stopPropagation(); });
-        /* Prevent iOS/Android from treating a vertex drag as page scrolling.
-         * Mapbox still receives the gesture and moves the marker normally. */
-        element.addEventListener('touchstart', function (event) {
-            if (event && event.preventDefault) event.preventDefault();
-            if (event && event.stopPropagation) event.stopPropagation();
-            setDraggingState(true);
-        }, { passive: false });
-        element.addEventListener('pointerdown', function (event) {
-            if (event && event.pointerType === 'touch') {
-                if (event.preventDefault) event.preventDefault();
-                if (event.stopPropagation) event.stopPropagation();
-                setDraggingState(true);
-            }
-        }, { passive: false });
+        /* Let Mapbox's own marker drag handler receive the touch gesture. A
+         * preventDefault() here suppresses the pointer sequence on some
+         * iOS/Android browsers, which makes vertices impossible to move and
+         * can leave the page's scroll state locked. */
         return element;
     }
 
@@ -457,6 +446,16 @@
         qs('[data-route-editor-action="fit"]', host).addEventListener('click', fitCoordinates);
         qs('[data-route-editor-action="locate"]', host).addEventListener('click', function () { locateUser(true); });
         finishButton.addEventListener('click', finish);
+        /* A cancelled touch/pointer gesture must always release the temporary
+         * editor state. Without this cleanup, a browser interruption could
+         * leave the document in a permanently non-scrollable state. */
+        var releaseDraggingState = function () { setDraggingState(false); };
+        window.addEventListener('pointerup', releaseDraggingState, { passive: true });
+        window.addEventListener('pointercancel', releaseDraggingState, { passive: true });
+        window.addEventListener('touchend', releaseDraggingState, { passive: true });
+        window.addEventListener('touchcancel', releaseDraggingState, { passive: true });
+        window.addEventListener('blur', releaseDraggingState, { passive: true });
+        document.addEventListener('visibilitychange', releaseDraggingState, { passive: true });
         form.addEventListener('submit', function (event) {
             if (coordinates.length < 2) {
                 event.preventDefault();

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.09
+ * Version: 0.11.10
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.09';
+	const VERSION               = '0.11.10';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -317,6 +317,14 @@ final class Inmov_JetEngine_FTTH_Importer {
 			),
 			'callback'            => array( $this, 'get_route_details' ),
 		) );
+		/* JetFormBuilder can omit the visual editor's geometry field from its
+		 * record payload. The editor mirrors the current drawing here so the
+		 * custom CCT action always has a reliable, user-scoped fallback. */
+		register_rest_route( 'inmov-ftth/v1', '/routes/draft', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'permission_callback' => function() { return $this->can_edit_points(); },
+			'callback'            => array( $this, 'save_route_draft_geometry' ),
+		) );
 		register_rest_route( 'inmov-ftth/v1', '/points', array(
 			'methods' => WP_REST_Server::READABLE,
 			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
@@ -397,6 +405,42 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'permission_callback' => function() { return is_user_logged_in() && current_user_can( 'read' ); },
 			'callback'            => array( $this, 'mark_all_notifications_read' ),
 		) );
+	}
+
+	/** Store the latest route drawing briefly while JetFormBuilder processes it. */
+	public function save_route_draft_geometry( $request ) {
+		if ( ! $this->can_edit_points() ) {
+			return new WP_Error( 'inmov_ftth_route_forbidden', 'Você não tem permissão para cadastrar ou editar rotas da rede.', array( 'status' => 403 ) );
+		}
+		$params   = $request instanceof WP_REST_Request ? $request->get_json_params() : array();
+		$raw      = $params['geometry'] ?? '';
+		$geometry = is_array( $raw ) ? $raw : json_decode( wp_unslash( (string) $raw ), true );
+		if ( ! is_array( $geometry ) || 'LineString' !== ( $geometry['type'] ?? '' ) || empty( $geometry['coordinates'] ) ) {
+			return new WP_Error( 'inmov_ftth_route_geometry_invalid', 'A geometria da rota é inválida.', array( 'status' => 422 ) );
+		}
+		$coordinates = array();
+		foreach ( $geometry['coordinates'] as $coordinate ) {
+			if ( ! is_array( $coordinate ) || count( $coordinate ) < 2 || ! is_numeric( $coordinate[0] ) || ! is_numeric( $coordinate[1] ) ) {
+				continue;
+			}
+			$lng = (float) $coordinate[0];
+			$lat = (float) $coordinate[1];
+			if ( abs( $lng ) <= 180 && abs( $lat ) <= 90 ) {
+				$coordinates[] = array( $lng, $lat );
+			}
+		}
+		if ( count( $coordinates ) < 2 ) {
+			return new WP_Error( 'inmov_ftth_route_geometry_invalid', 'Desenhe pelo menos dois pontos para salvar a rota.', array( 'status' => 422 ) );
+		}
+		set_transient(
+			'inmov_ftth_route_draft_' . get_current_user_id(),
+			array(
+				'geometry' => array( 'type' => 'LineString', 'coordinates' => $coordinates ),
+				'length'   => max( 0, absint( $params['length'] ?? 0 ) ),
+			),
+			15 * MINUTE_IN_SECONDS
+		);
+		return rest_ensure_response( array( 'ok' => true ) );
 	}
 
 	/** Return active notifications addressed to the authenticated user. */
@@ -1066,6 +1110,18 @@ final class Inmov_JetEngine_FTTH_Importer {
 
 		$geometry_raw = $request['rota_geometria_geojson'] ?? '';
 		$geometry = is_array( $geometry_raw ) ? $geometry_raw : json_decode( wp_unslash( (string) $geometry_raw ), true );
+		/* Some JetFormBuilder versions omit hidden/custom geometry fields from
+		 * the action request. Recover the latest drawing saved by the frontend
+		 * before rejecting the submission. */
+		if ( ! is_array( $geometry ) || 'LineString' !== ( $geometry['type'] ?? '' ) || empty( $geometry['coordinates'] ) ) {
+			$draft = get_transient( 'inmov_ftth_route_draft_' . get_current_user_id() );
+			if ( is_array( $draft ) && ! empty( $draft['geometry'] ) ) {
+				$geometry = $draft['geometry'];
+				if ( empty( $request['rota_comprimento_metros'] ) && isset( $draft['length'] ) ) {
+					$request['rota_comprimento_metros'] = $draft['length'];
+				}
+			}
+		}
 		if ( ! is_array( $geometry ) || 'LineString' !== ( $geometry['type'] ?? '' ) || empty( $geometry['coordinates'] ) || count( $geometry['coordinates'] ) < 2 ) {
 			$this->throw_jfb_action_error( 'Desenhe pelo menos dois pontos para salvar a rota.' );
 			return;
@@ -1160,7 +1216,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$exists = $wpdb->get_var( $wpdb->prepare( "SELECT _ID FROM {$table} WHERE _ID = %d LIMIT 1", $verify_id ) );
 		if ( ! $exists ) {
 			$this->throw_jfb_action_error( 'A rota não foi encontrada após a gravação.' );
+			return;
 		}
+		delete_transient( 'inmov_ftth_route_draft_' . get_current_user_id() );
 		$this->create_map_item_success_notification( 'route', $verify_id, $data, $is_new );
 	}
 
@@ -1739,6 +1797,7 @@ final class Inmov_JetEngine_FTTH_Importer {
 			'InmovFtthRouteEditor',
 			array(
 				'routeDetailsEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/routes/' ) ),
+				'draftEndpoint'        => esc_url_raw( rest_url( 'inmov-ftth/v1/routes/draft' ) ),
 				'reverseGeocodeEndpoint' => esc_url_raw( rest_url( 'inmov-ftth/v1/location/reverse' ) ),
 				'nonce'               => wp_create_nonce( 'wp_rest' ),
 				'style'               => 'mapbox://styles/mapbox/outdoors-v12',

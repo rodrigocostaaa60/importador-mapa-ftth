@@ -15,6 +15,8 @@
     var editorHost;
     var userLocationMarker;
     var locationRequestPending = false;
+    var draftPersistTimer = 0;
+    var draftSubmissionPending = false;
 
     function qs(selector, root) { return (root || document).querySelector(selector); }
 
@@ -95,6 +97,30 @@
         return JSON.stringify({ type: 'LineString', coordinates: coordinates.map(function (pair) { return [Number(pair[0]), Number(pair[1])]; }) });
     }
 
+    function sendDraftGeometry() {
+        if (!config.draftEndpoint || typeof window.fetch !== 'function' || coordinates.length < 2) return Promise.resolve(false);
+        var headers = { 'Content-Type': 'application/json' };
+        if (config.nonce) headers['X-WP-Nonce'] = config.nonce;
+        return window.fetch(config.draftEndpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: headers,
+            body: JSON.stringify({ geometry: JSON.parse(geometryValue()), length: calculateLength() })
+        }).then(function (response) { return response.ok; }).catch(function () { return false; });
+    }
+
+    function persistDraftGeometry(immediate) {
+        if (!config.draftEndpoint || coordinates.length < 2) return Promise.resolve(false);
+        if (draftPersistTimer) { window.clearTimeout(draftPersistTimer); draftPersistTimer = 0; }
+        if (immediate) return sendDraftGeometry();
+        return new Promise(function (resolve) {
+            draftPersistTimer = window.setTimeout(function () {
+                draftPersistTimer = 0;
+                sendDraftGeometry().then(resolve);
+            }, 150);
+        });
+    }
+
     function syncFields() {
         var geometry = field('rota_geometria_geojson');
         if (geometry) {
@@ -118,6 +144,7 @@
         if (finishButton) finishButton.disabled = coordinates.length < 2;
         if (undoButton) undoButton.disabled = coordinates.length === 0;
         if (clearButton) clearButton.disabled = coordinates.length === 0;
+        persistDraftGeometry(false);
     }
 
     /* JetFormBuilder's Save Form Record action intentionally omits controls
@@ -490,6 +517,19 @@
             if (coordinates.length < 2) {
                 event.preventDefault();
                 setStatus('Desenhe pelo menos dois pontos para salvar a rota.', 'error');
+                return;
+            }
+            /* Wait for the final drawing to reach the server before allowing
+             * JetFormBuilder to build its AJAX payload. This is needed on
+             * versions that silently omit hidden/custom fields. */
+            if (!draftSubmissionPending && config.draftEndpoint && typeof form.requestSubmit === 'function') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                draftSubmissionPending = true;
+                persistDraftGeometry(true).then(function () {
+                    draftSubmissionPending = false;
+                    form.requestSubmit();
+                });
                 return;
             }
             normalizeRouteSubmissionFields(!!routeIdFromUrl());

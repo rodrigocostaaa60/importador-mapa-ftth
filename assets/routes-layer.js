@@ -874,6 +874,8 @@
 			'nativo': 'Nativo',
 			'ativo': 'Ativo',
 			'planejado': 'Planejado',
+			'planejada': 'Planejada',
+			'planejamento': 'Planejada',
 			'em implantacao': 'Em implantação',
 			'manutencao': 'Manutenção',
 			'inativo': 'Inativo',

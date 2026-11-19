@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Importador do Mapa FTTH (JetEngine)
  * Description: Importação assistida de KML/KMZ para os CCTs de pontos e rotas do JetEngine.
- * Version: 0.11.10
+ * Version: 0.11.11
  * Author: Inmov Agência
  * Requires PHP: 8.0
  * Update URI: https://github.com/rodrigocostaaa60/importador-mapa-ftth
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Inmov_JetEngine_FTTH_Importer {
-	const VERSION               = '0.11.10';
+	const VERSION               = '0.11.11';
 	const TRANSIENT_TTL         = 30 * MINUTE_IN_SECONDS;
 	const UPDATE_CACHE_TTL      = 5 * MINUTE_IN_SECONDS;
 	const UPDATE_FAILURE_TTL    = MINUTE_IN_SECONDS;
@@ -1161,6 +1161,13 @@ final class Inmov_JetEngine_FTTH_Importer {
 			$end_code = '';
 		}
 		$status = sanitize_key( $request['rota_status'] ?? 'planejada' );
+		$status_aliases = array(
+			'planejamento'  => 'planejada',
+			'planejado'     => 'planejada',
+			'emimplantacao' => 'em_implantacao',
+			'em_manutencao' => 'manutencao',
+		);
+		$status = $status_aliases[ $status ] ?? $status;
 		$allowed_statuses = array( 'nativa', 'planejada', 'ativa', 'ativo', 'em_implantacao', 'manutencao', 'inativa' );
 		if ( ! in_array( $status, $allowed_statuses, true ) ) {
 			$status = 'planejada';
@@ -1515,7 +1522,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 	public function get_points() {
 		global $wpdb;
 		$table = $wpdb->prefix . 'jet_cct_pontos_rede_ftth';
-		$rows = $wpdb->get_results( "SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND ponto_status <> 'inativo' LIMIT 3000", ARRAY_A );
+		/* Keep every point status visible except the two inactive spellings that
+		 * exist in older imports and in the current point form. */
+		$rows = $wpdb->get_results( "SELECT _ID, cct_author_id, cct_created, cct_modified, ponto_codigo, ponto_nome, ponto_tipo, ponto_localidade, ponto_endereco, ponto_latitude, ponto_longitude, ponto_status, ponto_capacidade_portas, ponto_observacao FROM {$table} WHERE cct_status = 'publish' AND LOWER(TRIM(COALESCE(ponto_status, ''))) NOT IN ('inativo', 'inativa') LIMIT 3000", ARRAY_A );
 		return rest_ensure_response( array_map( array( $this, 'format_point_record' ), is_array( $rows ) ? $rows : array() ) );
 	}
 
@@ -1582,9 +1591,9 @@ final class Inmov_JetEngine_FTTH_Importer {
 		$sql = $wpdb->prepare(
 			"SELECT _ID, cct_author_id, cct_created, cct_modified, rota_codigo, rota_nome, rota_localidade, rota_tipo, rota_tipo_cabo, rota_quantidade_fibras, rota_status, rota_cor_mapa, rota_ponto_inicio_codigo, rota_ponto_fim_codigo, rota_comprimento_metros, rota_geometria_geojson, rota_observacao
 			FROM {$table}
-			WHERE cct_status = %s AND rota_status IN (%s, %s, %s, %s, %s)
+			WHERE cct_status = %s AND LOWER(TRIM(rota_status)) IN (%s, %s, %s, %s, %s, %s, %s, %s)
 			ORDER BY _ID ASC LIMIT 3000",
-			'publish', 'nativa', 'ativa', 'ativo', 'em_implantacao', 'manutencao'
+			'publish', 'nativa', 'planejada', 'planejamento', 'planejado', 'ativa', 'ativo', 'em_implantacao', 'manutencao'
 		);
 		$rows = $wpdb->get_results( $sql, ARRAY_A );
 		$features = array();

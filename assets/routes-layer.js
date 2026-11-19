@@ -1274,14 +1274,42 @@
 		});
 	}
 
+	function clearNativeEditLocationPreview(map) {
+		if (!map || !map.__inmovFtthEditPreviewMarker) return;
+		try { map.__inmovFtthEditPreviewMarker.remove(); } catch (error) {}
+		map.__inmovFtthEditPreviewMarker = null;
+	}
+
+	function showNativeEditLocationPreview(map, coordinates) {
+		if (!map || !coordinates || !Number.isFinite(Number(coordinates.lat)) || !Number.isFinite(Number(coordinates.lng))) return;
+		if (!window.mapboxgl || typeof window.mapboxgl.Marker !== 'function') return;
+		var element = map.__inmovFtthEditPreviewElement;
+		if (!element || !element.isConnected) {
+			element = document.createElement('div');
+			element.className = 'inmov-ftth-edit-location-preview';
+			element.setAttribute('aria-label', 'Nova posição selecionada');
+			element.innerHTML = '<span class="inmov-ftth-edit-location-preview__pulse"></span><strong>Nova posição</strong>';
+			map.__inmovFtthEditPreviewElement = element;
+		}
+		var lngLat = [Number(coordinates.lng), Number(coordinates.lat)];
+		if (!map.__inmovFtthEditPreviewMarker) {
+			map.__inmovFtthEditPreviewMarker = new window.mapboxgl.Marker({ element: element, anchor: 'center' }).setLngLat(lngLat).addTo(map);
+		} else {
+			map.__inmovFtthEditPreviewMarker.setLngLat(lngLat);
+		}
+	}
+
 	function closeNativeEditPanel(map) {
 		var panel = nativeEditPanel;
 		if (!panel) return;
 		panel.classList.remove('is-open', 'is-expanded', 'is-saving');
 		panel.setAttribute('aria-hidden', 'true');
-		if (map) map.__inmovFtthEditSelecting = false;
+		if (map) {
+			map.__inmovFtthEditSelecting = false;
+			clearNativeEditLocationPreview(map);
+		}
 		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
-		if (host && host.classList) host.classList.remove('inmov-ftth-map-shell--edit-open');
+		if (host && host.classList) host.classList.remove('inmov-ftth-map-shell--edit-open', 'inmov-ftth-map-shell--edit-location-map');
 	}
 
 	function canEditPoints() {
@@ -1362,6 +1390,7 @@
 		if (map) map.__inmovFtthEditSelecting = selected === 'map';
 		var host = panel.closest && panel.closest('.inmov-ftth-map-shell');
 		if (host && host.classList) host.classList.toggle('inmov-ftth-map-shell--edit-location-map', selected === 'map');
+		if (selected !== 'map') clearNativeEditLocationPreview(map);
 		if (map && typeof map.resize === 'function') window.requestAnimationFrame(function () { map.resize(); });
 	}
 
@@ -1435,6 +1464,7 @@
 				if (location) { location.value = coordinates.lat + ',' + coordinates.lng; dispatchEditFieldEvents(location); }
 				setNativeEditMode(panel, 'map');
 				updateNativeEditLocationMode(panel, map);
+				showNativeEditLocationPreview(map, coordinates);
 				reverseNativeEditLocation(panel, coordinates);
 				var notice = panel.querySelector('.inmov-ftth-map-edit-panel__notice');
 				if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-info'; notice.textContent = 'Nova posição selecionada. Salve para confirmar.'; }
@@ -1461,6 +1491,7 @@
 				.then(function () {
 					if (notice) { notice.className = 'inmov-ftth-map-edit-panel__notice is-success'; notice.textContent = 'Ponto atualizado com sucesso.'; }
 					map.__inmovFtthEditSelecting = false;
+					clearNativeEditLocationPreview(map);
 					var refresh = map.__inmovFtthRefreshData;
 					if (typeof refresh === 'function') refresh();
 					window.setTimeout(function () { closeNativeEditPanel(map); }, 350);
@@ -1490,6 +1521,7 @@
 		var lat = nativeEditValue(panel, 'ponto_latitude'); if (lat) lat.value = payload.lat === undefined ? '' : payload.lat;
 		var lng = nativeEditValue(panel, 'ponto_longitude'); if (lng) lng.value = payload.lng === undefined ? '' : payload.lng;
 		var location = nativeEditValue(panel, 'ponto_localizacao'); if (location) location.value = payload.lat !== undefined && payload.lng !== undefined ? String(payload.lat) + ',' + String(payload.lng) : '';
+		clearNativeEditLocationPreview(map);
 		setNativeEditMode(panel, 'keep');
 		var reason = nativeEditValue(panel, 'inmov_change_reason'); if (reason) reason.value = '';
 		var reviewed = nativeEditValue(panel, 'inmov_reviewed'); if (reviewed) reviewed.checked = false;
@@ -1665,6 +1697,27 @@
 		var lng = Number(item.lng ?? item.longitude ?? item.lon ?? position?.lng ?? position?.[0]);
 		var lat = Number(item.lat ?? item.latitude ?? position?.lat ?? position?.[1]);
 		return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+	}
+
+	/* JetEngine keeps the HTML marker instances alive when its data request is
+	 * refreshed. Update those instances explicitly so a point edited through the
+	 * native panel does not keep its old position until a full page reload. */
+	function syncPointMarkerPositions(map, records) {
+		if (!map || !Array.isArray(records)) return;
+		var groups = window.JetEngineMaps && window.JetEngineMaps.markersData;
+		if (!groups) return;
+		records.forEach(function (item) {
+			var coordinates = markerCoordinates(item);
+			if (!coordinates) return;
+			var id = item && (item.id !== undefined ? item.id : (item._ID !== undefined ? item._ID : item.ID));
+			if (id === undefined || id === null || id === '') return;
+			(groups[String(id)] || []).forEach(function (entry) {
+				var marker = entry && entry.marker;
+				if (!marker || typeof marker.setLngLat !== 'function') return;
+				try { marker.setLngLat(coordinates); } catch (error) {}
+			});
+		});
+		invalidateMarkerEntries(map);
 	}
 
 	function focusRequestedPoint(map) {
@@ -2397,6 +2450,7 @@
 						records = data;
 						pointRecords = {};
 						data.forEach(function (item) { pointRecords[item.id] = item; });
+						syncPointMarkerPositions(map, data);
 						decorateAllPointMarkers(map);
 						updateMarkerVisibility(map);
 						render();
@@ -2419,6 +2473,7 @@
 						records = data;
 						pointRecords = {};
 						data.forEach(function (item) { pointRecords[item.id] = item; });
+						syncPointMarkerPositions(map, data);
 						decorateAllPointMarkers(map);
 						updateMarkerVisibility(map);
 						render();

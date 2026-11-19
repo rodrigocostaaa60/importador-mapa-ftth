@@ -484,6 +484,10 @@
  .inmov-ftth-map-edit-panel__grid{grid-template-columns:1fr}.inmov-ftth-map-edit-panel__coordinates{grid-template-columns:1fr 1fr}
 }
 .inmov-ftth-map-shell--edit-location-map .mapboxgl-canvas{cursor:crosshair!important}
+.inmov-ftth-edit-location-preview{position:relative;display:grid;place-items:center;width:38px;height:38px;pointer-events:none;filter:drop-shadow(0 4px 8px rgba(15,23,42,.28));z-index:12000}
+.inmov-ftth-edit-location-preview__pulse{display:block;width:25px;height:25px;border:4px solid #fff;border-radius:50%;background:#2563eb;box-shadow:0 0 0 5px rgba(37,99,235,.25),0 0 0 9px rgba(37,99,235,.10);animation:inmov-ftth-edit-location-pulse 1.35s ease-out infinite}
+.inmov-ftth-edit-location-preview strong{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:5px 8px;border-radius:8px;background:#1d4ed8;color:#fff;font:700 10px/1 Inter,ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 10px rgba(15,23,42,.2)}
+@keyframes inmov-ftth-edit-location-pulse{0%,100%{box-shadow:0 0 0 4px rgba(37,99,235,.25),0 0 0 8px rgba(37,99,235,.08)}50%{box-shadow:0 0 0 7px rgba(37,99,235,.18),0 0 0 14px rgba(37,99,235,.04)}}
 @media(max-width:767px){
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__head{padding:7px 22px 14px;font-size:19px}
  .inmov-ftth-map-shell .inmov-ftth-map-inventory-panel__body{padding:16px 18px calc(28px + env(safe-area-inset-bottom))}
